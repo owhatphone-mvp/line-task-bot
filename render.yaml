@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: line-task-bot
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: node server.js
+    envVars:
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+      - key: DATABASE_PATH
+        value: ./database.sqlite
+      - key: NODE_ENV
+        value: production
