@@ -13,7 +13,7 @@ const config = {
 };
 
 const client = new line.messagingApi.MessagingApiClient({
-  bearer: config.channelAccessToken
+  channelAccessToken: config.channelAccessToken
 });
 
 // LINE Webhook endpoint (must come BEFORE express.json to preserve raw body for signature validation)
@@ -71,34 +71,39 @@ async function handleTextMessage(event) {
   await TaskDB.saveMember(groupId, userId, displayName);
 
   // คำสั่งช่วยเหลือ
-  if (text === '!help' || text === '!h') {
+  if (text === '!help' || text === '!h' || text === '!ช่วย') {
     await sendHelpMessage(event.replyToken);
     return;
   }
 
   // ดูงานทั้งหมดของฉัน
-  if (text === '!mytasks' || text === '!งานของฉัน') {
+  if (text === '!งานที่ต้องทำ' || text === '!mytasks' || text === '!mytask') {
     await showMyTasks(event.replyToken, groupId, userId);
     return;
   }
 
   // ดูงานที่ยังไม่เสร็จ
-  if (text === '!pending' || text === '!งานค้าง') {
+  if (text === '!งานค้าง' || text === '!pending') {
     await showPendingTasks(event.replyToken, groupId, userId);
     return;
   }
 
-  // ตอบกลับงาน (รูปแบบ: !done <task_id> <ข้อความ>)
-  if (text.startsWith('!done ') || text.startsWith('!เสร็จ ')) {
+  // ส่งงาน/ตอบกลับงาน (รูปแบบ: !ส่งงาน <รหัสงาน> <ข้อความ>)
+  if (text.startsWith('!ส่งงาน ') || text.startsWith('!done ')) {
     await handleTaskReply(event.replyToken, groupId, userId, displayName, text);
     return;
   }
 
-  // ตรวจสอบว่ามีการ mention/tag ใครหรือไม่
+  // รับงาน (รูปแบบ: !รับงาน หรือ !รับงาน <รหัสงาน>)
+  if (text === '!รับงาน' || text.startsWith('!รับงาน ')) {
+    await handleAcceptTask(event.replyToken, groupId, userId, displayName, text);
+    return;
+  }
+
+  // สร้างงานใหม่ (รูปแบบ: !ตามงาน @ชื่อคน รายละเอียดงาน)
   const mentionees = event.message.mention?.mentionees || [];
   
-  if (mentionees.length > 0) {
-    // มีการ tag คน - สร้างงานใหม่
+  if (text.startsWith('!ตามงาน') && mentionees.length > 0) {
     await createTask(event, mentionees, displayName);
   }
 }
@@ -111,8 +116,8 @@ async function createTask(event, mentionees, assignerName) {
   // สร้าง task ID แบบสั้น
   const taskId = generateTaskId();
   
-  // ดึงข้อความงาน (ลบ mention ออก)
-  let taskMessage = text;
+  // ดึงข้อความงาน (ลบ !ตามงาน และ mention ออก)
+  let taskMessage = text.replace(/^!ตามงาน\s*/, '');
   mentionees.forEach(mention => {
     taskMessage = taskMessage.replace(mention.text, '').trim();
   });
@@ -152,9 +157,231 @@ async function createTask(event, mentionees, assignerName) {
   }
 
   if (createdTasks.length > 0) {
-    // ส่งข้อความยืนยัน
-    const replyText = formatTaskCreatedMessage(createdTasks, assignerName, taskMessage);
-    await replyMessage(event.replyToken, replyText);
+    // สร้างข้อความแบบ textV2 พร้อม mention ผู้รับงาน
+    const substitution = {};
+    const mentionParts = [];
+
+    createdTasks.forEach((task, index) => {
+      const key = `assignee${index}`;
+      substitution[key] = {
+        type: 'mention',
+        mentionee: {
+          type: 'user',
+          userId: task.assigneeId
+        }
+      };
+      mentionParts.push(`{${key}}`);
+    });
+
+    const taskId = createdTasks[0].taskId;
+    const messageText = `📋 สร้างงานใหม่แล้ว!\n\n` +
+      `🆔 รหัสงาน: ${taskId}\n` +
+      `👤 มอบให้: ${mentionParts.join(', ')}\n` +
+      `📝 รายละเอียด: ${taskMessage}\n` +
+      `👨‍💼 โดย: ${assignerName}\n\n` +
+      `💡 ผู้รับงานตอบกลับด้วย:\n` +
+      `!ส่งงาน ${taskId} <ข้อความ>`;
+
+    try {
+      await client.replyMessage({
+        replyToken: event.replyToken,
+        messages: [{
+          type: 'textV2',
+          text: messageText,
+          substitution: substitution,
+          quickReply: {
+            items: [
+              {
+                type: 'action',
+                action: {
+                  type: 'message',
+                  label: '✅ รับงาน',
+                  text: `!รับงาน ${createdTasks[0].taskId}`
+                }
+              },
+              {
+                type: 'action',
+                action: {
+                  type: 'message',
+                  label: '📋 งานที่ต้องทำ',
+                  text: '!งานที่ต้องทำ'
+                }
+              }
+            ]
+          }
+        }]
+      });
+    } catch (err) {
+      console.error('Error sending textV2:', err);
+      // fallback เป็นข้อความธรรมดาถ้า textV2 ไม่รองรับ
+      const fallbackText = formatTaskCreatedMessage(createdTasks, assignerName, taskMessage);
+      await replyMessage(event.replyToken, fallbackText);
+    }
+  }
+}
+
+// แปลงวันที่จากข้อความไทย เช่น "10/04 15:00", "10/04/2026 15:00", "พรุ่งนี้ 15:00", "วันนี้ 18:00"
+function parseDeadline(text) {
+  const now = new Date();
+  
+  // รูปแบบ "พรุ่งนี้ HH:MM"
+  let match = text.match(/พรุ่งนี้\s*(\d{1,2})[:.:](\d{2})/);
+  if (match) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + 1);
+    d.setHours(parseInt(match[1]), parseInt(match[2]), 0, 0);
+    return d;
+  }
+
+  // รูปแบบ "วันนี้ HH:MM" หรือ "HH:MM"
+  match = text.match(/(?:วันนี้\s*)?(\d{1,2})[:.:](\d{2})$/);
+  if (match && !text.match(/\d{1,2}\/\d{1,2}/)) {
+    const d = new Date(now);
+    d.setHours(parseInt(match[1]), parseInt(match[2]), 0, 0);
+    if (d <= now) d.setDate(d.getDate() + 1); // ถ้าเวลาผ่านไปแล้ว ให้เป็นพรุ่งนี้
+    return d;
+  }
+
+  // รูปแบบ "DD/MM HH:MM" หรือ "DD/MM/YYYY HH:MM"
+  match = text.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\s+(\d{1,2})[:.:](\d{2})/);
+  if (match) {
+    const day = parseInt(match[1]);
+    const month = parseInt(match[2]) - 1;
+    let year = match[3] ? parseInt(match[3]) : now.getFullYear();
+    if (year < 100) year += 2000;
+    if (year > 2500) year -= 543; // แปลง พ.ศ. เป็น ค.ศ.
+    const hour = parseInt(match[4]);
+    const min = parseInt(match[5]);
+    return new Date(year, month, day, hour, min, 0);
+  }
+
+  return null;
+}
+
+// จัดรูปแบบ deadline เป็นข้อความไทย
+function formatDeadline(dateString) {
+  const d = new Date(dateString);
+  return d.toLocaleDateString('th-TH', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+// จัดการรับงาน
+async function handleAcceptTask(replyToken, groupId, userId, displayName, text) {
+  const parts = text.replace('!รับงาน', '').trim().split(/\s+/);
+  
+  // หา task ID (ถ้ามี)
+  let taskId = null;
+  let deadlineText = '';
+  
+  if (parts.length > 0 && parts[0].match(/^[A-Z0-9]{6}$/)) {
+    taskId = parts[0];
+    deadlineText = parts.slice(1).join(' ');
+  } else {
+    deadlineText = parts.join(' ');
+  }
+
+  // หางาน
+  let task;
+  if (taskId) {
+    task = await TaskDB.getTaskById(taskId);
+  } else {
+    const pendingTasks = await TaskDB.getTasksByAssignee(groupId, userId, 'pending');
+    task = pendingTasks.length > 0 ? pendingTasks[0] : null;
+  }
+
+  if (!task) {
+    await replyMessage(replyToken, 'ไม่พบงานที่รอรับครับ');
+    return;
+  }
+
+  if (task.assignee_id !== userId) {
+    await replyMessage(replyToken, `คุณไม่ใช่ผู้รับผิดชอบงานรหัส ${task.task_id} ครับ`);
+    return;
+  }
+
+  if (task.status === 'accepted') {
+    await replyMessage(replyToken, `คุณรับงานรหัส ${task.task_id} ไปแล้วครับ`);
+    return;
+  }
+
+  if (task.status === 'completed') {
+    await replyMessage(replyToken, `งานรหัส ${task.task_id} เสร็จสิ้นไปแล้วครับ`);
+    return;
+  }
+
+  // ต้องระบุกำหนดส่ง
+  if (!deadlineText) {
+    try {
+      await client.replyMessage({
+        replyToken,
+        messages: [{
+          type: 'text',
+          text: `📅 กรุณาระบุกำหนดส่งด้วยครับ\n\nพิมพ์: !รับงาน ${task.task_id} <กำหนดส่ง>\n\nตัวอย่าง:\n• !รับงาน ${task.task_id} วันนี้ 18:00\n• !รับงาน ${task.task_id} พรุ่งนี้ 12:00\n• !รับงาน ${task.task_id} 15/04 09:00`,
+          quickReply: {
+            items: [
+              {
+                type: 'action',
+                action: { type: 'message', label: '⏰ วันนี้ 18:00', text: `!รับงาน ${task.task_id} วันนี้ 18:00` }
+              },
+              {
+                type: 'action',
+                action: { type: 'message', label: '📅 พรุ่งนี้ 12:00', text: `!รับงาน ${task.task_id} พรุ่งนี้ 12:00` }
+              },
+              {
+                type: 'action',
+                action: { type: 'message', label: '📅 พรุ่งนี้ 18:00', text: `!รับงาน ${task.task_id} พรุ่งนี้ 18:00` }
+              }
+            ]
+          }
+        }]
+      });
+    } catch (err) {
+      await replyMessage(replyToken, `📅 กรุณาระบุกำหนดส่งด้วยครับ\n\nพิมพ์: !รับงาน ${task.task_id} <กำหนดส่ง>\nตัวอย่าง: !รับงาน ${task.task_id} พรุ่งนี้ 12:00`);
+    }
+    return;
+  }
+
+  // แปลงกำหนดส่ง
+  const deadline = parseDeadline(deadlineText);
+  if (!deadline) {
+    await replyMessage(replyToken, `❌ รูปแบบวันที่ไม่ถูกต้อง\n\nตัวอย่างที่ใช้ได้:\n• วันนี้ 18:00\n• พรุ่งนี้ 12:00\n• 15/04 09:00\n• 15/04/2026 09:00`);
+    return;
+  }
+
+  // บันทึก
+  await TaskDB.acceptTask(task.task_id, deadline.toISOString());
+
+  // ตอบกลับพร้อม tag ผู้มอบหมาย
+  const confirmText = `👍 รับงานแล้ว!\n\n` +
+    `📋 รหัสงาน: ${task.task_id}\n` +
+    `📝 รายละเอียด: ${task.message}\n` +
+    `👤 มอบโดย: {assigner}\n` +
+    `🙋 รับโดย: ${displayName}\n` +
+    `⏰ กำหนดส่ง: ${formatDeadline(deadline)}\n\n` +
+    `💡 เสร็จแล้วพิมพ์: !ส่งงาน ${task.task_id} <ข้อความ>`;
+
+  try {
+    await client.replyMessage({
+      replyToken,
+      messages: [{
+        type: 'textV2',
+        text: confirmText,
+        substitution: {
+          assigner: {
+            type: 'mention',
+            mentionee: { type: 'user', userId: task.assigner_id }
+          }
+        }
+      }]
+    });
+  } catch (err) {
+    const fallback = confirmText.replace('{assigner}', task.assigner_name);
+    await replyMessage(replyToken, fallback);
   }
 }
 
@@ -163,7 +390,7 @@ async function handleTaskReply(replyToken, groupId, userId, displayName, text) {
   // แยก task ID และข้อความตอบกลับ
   const parts = text.split(' ');
   if (parts.length < 3) {
-    await replyMessage(replyToken, 'รูปแบบไม่ถูกต้อง\nใช้: !done <รหัสงาน> <ข้อความตอบกลับ>\nตัวอย่าง: !done ABC123 งานเสร็จแล้วครับ');
+    await replyMessage(replyToken, 'รูปแบบไม่ถูกต้อง\nใช้: !ส่งงาน <รหัสงาน> <ข้อความตอบกลับ>\nตัวอย่าง: !ส่งงาน ABC123 งานเสร็จแล้วครับ');
     return;
   }
 
@@ -190,17 +417,47 @@ async function handleTaskReply(replyToken, groupId, userId, displayName, text) {
     return;
   }
 
+  // ถ้ายังไม่ได้รับงาน ให้รับอัตโนมัติก่อนส่งงาน
+  if (task.status === 'pending') {
+    await TaskDB.acceptTask(taskId);
+  }
+
   // บันทึกการตอบกลับ
   await TaskDB.replyToTask(taskId, replyMessage_text);
 
-  // ส่งข้อความยืนยัน
+  // ส่งข้อความยืนยัน พร้อม tag ผู้มอบหมาย
   const confirmText = `✅ งานเสร็จสิ้น!\n\n` +
     `📋 รหัสงาน: ${taskId}\n` +
-    `👤 มอบโดย: ${task.assigner_name}\n` +
+    `👤 มอบโดย: {assigner}\n` +
     `📝 รายละเอียด: ${task.message}\n\n` +
     `💬 คำตอบจาก ${displayName}:\n${replyMessage_text}`;
 
-  await replyMessage(replyToken, confirmText);
+  try {
+    await client.replyMessage({
+      replyToken,
+      messages: [{
+        type: 'textV2',
+        text: confirmText,
+        substitution: {
+          assigner: {
+            type: 'mention',
+            mentionee: {
+              type: 'user',
+              userId: task.assigner_id
+            }
+          }
+        }
+      }]
+    });
+  } catch (err) {
+    console.error('Error sending textV2 reply:', err);
+    const fallback = `✅ งานเสร็จสิ้น!\n\n` +
+      `📋 รหัสงาน: ${taskId}\n` +
+      `👤 มอบโดย: ${task.assigner_name}\n` +
+      `📝 รายละเอียด: ${task.message}\n\n` +
+      `💬 คำตอบจาก ${displayName}:\n${replyMessage_text}`;
+    await replyMessage(replyToken, fallback);
+  }
   
   // แจ้งเตือนผู้มอบหมายงาน (ถ้าอยู่ในกลุ่มเดียวกัน)
   try {
@@ -228,7 +485,7 @@ async function showMyTasks(replyToken, groupId, userId) {
   let text = `📋 งานทั้งหมดของคุณ (${tasks.length} งาน):\n\n`;
   
   tasks.forEach((task, index) => {
-    const status = task.status === 'completed' ? '✅' : '⏳';
+    const status = task.status === 'completed' ? '✅' : task.status === 'accepted' ? '👍' : '⏳';
     text += `${index + 1}. ${status} [${task.task_id}] ${task.message.substring(0, 30)}${task.message.length > 30 ? '...' : ''}\n`;
     text += `   จาก: ${task.assigner_name} | ${formatDate(task.created_at)}\n\n`;
   });
@@ -250,7 +507,7 @@ async function showPendingTasks(replyToken, groupId, userId) {
   tasks.forEach((task, index) => {
     text += `${index + 1}. [${task.task_id}] ${task.message}\n`;
     text += `   จาก: ${task.assigner_name} | ${formatDate(task.created_at)}\n`;
-    text += `   💡 ตอบกลับ: !done ${task.task_id} <ข้อความ>\n\n`;
+    text += `   💡 ตอบกลับ: !ส่งงาน ${task.task_id} <ข้อความ>\n\n`;
   });
 
   await replyMessage(replyToken, text);
@@ -259,15 +516,17 @@ async function showPendingTasks(replyToken, groupId, userId) {
 // ส่งข้อความช่วยเหลือ
 async function sendHelpMessage(replyToken) {
   const helpText = `🤖 คู่มือใช้งาน Task Bot\n\n` +
-    `📌 สร้างงาน:\n` +
-    `   @ชื่อคน รายละเอียดงาน\n` +
-    `   (สามารถ tag หลายคนได้พร้อมกัน)\n\n` +
-    `✅ ตอบกลับงาน:\n` +
-    `   !done <รหัสงาน> <ข้อความ>\n` +
-    `   ตัวอย่าง: !done ABC123 ส่งงานแล้วครับ\n\n` +
+    `📌 สั่งงาน:\n` +
+    `   !ตามงาน @ชื่อคน รายละเอียดงาน\n\n` +
+    `👍 รับงาน:\n` +
+    `   !รับงาน - รับงานล่าสุด\n` +
+    `   !รับงาน <รหัสงาน> - รับงานตามรหัส\n` +
+    `   (หรือกดปุ่ม "รับงาน" ได้เลย)\n\n` +
+    `✅ ส่งงาน:\n` +
+    `   !ส่งงาน <รหัสงาน> <ข้อความ>\n\n` +
     `📋 ดูงาน:\n` +
-    `   !mytasks - ดูงานทั้งหมดของคุณ\n` +
-    `   !pending - ดูงานที่ยังไม่เสร็จ\n\n` +
+    `   !งานที่ต้องทำ - ดูงานทั้งหมด\n` +
+    `   !งานค้าง - ดูงานที่ยังไม่เสร็จ\n\n` +
     `❓ ช่วยเหลือ:\n` +
     `   !help - แสดงคู่มือนี้`;
 
@@ -283,7 +542,7 @@ async function handleJoinEvent(event) {
     `👋 สวัสดีครับ! ผมคือ Task Bot\n\n` +
     `พิมพ์ !help เพื่อดูวิธีใช้งาน\n\n` +
     `💡 เริ่มต้นใช้งาน:\n` +
-    `@ชื่อคน ตามด้วยรายละเอียดงาน`
+    `!ตามงาน @ชื่อคน ตามด้วยรายละเอียดงาน`
   );
 }
 
@@ -346,7 +605,7 @@ function formatTaskCreatedMessage(tasks, assignerName, message) {
     `📝 รายละเอียด: ${message}\n` +
     `👨‍💼 โดย: ${assignerName}\n\n` +
     `💡 ผู้รับงานตอบกลับด้วย:\n` +
-    `!done ${taskId} <ข้อความ>`;
+    `!ส่งงาน ${taskId} <ข้อความ>`;
 }
 
 // จัดรูปแบบวันที่
@@ -381,6 +640,58 @@ app.get('/api/tasks/:groupId', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ===== ระบบทวงงานอัตโนมัติ =====
+// ตรวจสอบทุก 5 นาที ว่ามีงานเลยกำหนดไหม
+setInterval(async () => {
+  try {
+    const overdueTasks = await TaskDB.getOverdueTasks();
+    
+    for (const task of overdueTasks) {
+      console.log(`⏰ Overdue task found: ${task.task_id} - ${task.message}`);
+      
+      // ส่ง push message ทวงงานในกลุ่ม
+      try {
+        await client.pushMessage({
+          to: task.group_id,
+          messages: [{
+            type: 'textV2',
+            text: `⏰ ทวงงาน!\n\n` +
+              `📋 รหัสงาน: ${task.task_id}\n` +
+              `📝 รายละเอียด: ${task.message}\n` +
+              `👤 ผู้รับงาน: {assignee}\n` +
+              `⚠️ เลยกำหนดส่ง: ${formatDeadline(task.deadline)}\n\n` +
+              `กรุณาส่งงานด้วย:\n!ส่งงาน ${task.task_id} <ข้อความ>`,
+            substitution: {
+              assignee: {
+                type: 'mention',
+                mentionee: { type: 'user', userId: task.assignee_id }
+              }
+            },
+            quickReply: {
+              items: [
+                {
+                  type: 'action',
+                  action: { type: 'message', label: '✅ ส่งงานเลย', text: `!ส่งงาน ${task.task_id} เสร็จแล้วครับ` }
+                }
+              ]
+            }
+          }]
+        });
+        
+        // บันทึกว่าส่ง reminder แล้ว
+        await TaskDB.markReminderSent(task.task_id);
+        console.log(`✅ Reminder sent for task ${task.task_id}`);
+      } catch (err) {
+        console.error(`Error sending reminder for task ${task.task_id}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('Error checking overdue tasks:', err);
+  }
+}, 5 * 60 * 1000); // ทุก 5 นาที
+
+console.log('⏰ Auto-reminder system started (checks every 5 minutes)');
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
