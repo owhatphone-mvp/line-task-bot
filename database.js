@@ -39,6 +39,8 @@ if (DATABASE_URL) {
           replied_at TIMESTAMP
         )
       `);
+      // Migration: add reject_reason if not exists
+      try { await db.query(`ALTER TABLE tasks ADD COLUMN reject_reason TEXT`); } catch(e) {}
       await db.query(`
         CREATE TABLE IF NOT EXISTS group_members (
           id SERIAL PRIMARY KEY,
@@ -47,6 +49,42 @@ if (DATABASE_URL) {
           display_name TEXT,
           joined_at TIMESTAMP DEFAULT NOW(),
           UNIQUE(group_id, user_id)
+        )
+      `);
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS chat_logs (
+          id SERIAL PRIMARY KEY,
+          group_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          display_name TEXT,
+          message TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS points (
+          id SERIAL PRIMARY KEY,
+          group_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          display_name TEXT,
+          total_points INTEGER DEFAULT 0,
+          tasks_completed INTEGER DEFAULT 0,
+          tasks_on_time INTEGER DEFAULT 0,
+          current_streak INTEGER DEFAULT 0,
+          best_streak INTEGER DEFAULT 0,
+          updated_at TIMESTAMP DEFAULT NOW(),
+          UNIQUE(group_id, user_id)
+        )
+      `);
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS points_log (
+          id SERIAL PRIMARY KEY,
+          group_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          task_id TEXT,
+          points INTEGER NOT NULL,
+          reason TEXT,
+          created_at TIMESTAMP DEFAULT NOW()
         )
       `);
       console.log('Database tables initialized (PostgreSQL)');
@@ -99,11 +137,48 @@ if (DATABASE_URL) {
         UNIQUE(group_id, user_id)
       )
     `);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS chat_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        display_name TEXT,
+        message TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS points (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        display_name TEXT,
+        total_points INTEGER DEFAULT 0,
+        tasks_completed INTEGER DEFAULT 0,
+        tasks_on_time INTEGER DEFAULT 0,
+        current_streak INTEGER DEFAULT 0,
+        best_streak INTEGER DEFAULT 0,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(group_id, user_id)
+      )
+    `);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS points_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        task_id TEXT,
+        points INTEGER NOT NULL,
+        reason TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
     console.log('Database tables initialized (SQLite)');
     // Migration
     db.run(`ALTER TABLE tasks ADD COLUMN deadline DATETIME`, () => {});
     db.run(`ALTER TABLE tasks ADD COLUMN reminder_sent INTEGER DEFAULT 0`, () => {});
     db.run(`ALTER TABLE tasks ADD COLUMN accepted_at DATETIME`, () => {});
+    db.run(`ALTER TABLE tasks ADD COLUMN reject_reason TEXT`, () => {});
   }
 }
 
@@ -190,7 +265,7 @@ const TaskDB = {
       `SELECT * FROM tasks 
        WHERE deadline IS NOT NULL 
        AND deadline <= ? 
-       AND status != 'completed' 
+       AND status = 'accepted'
        AND reminder_sent = 0`,
       [now]
     );
@@ -203,9 +278,27 @@ const TaskDB = {
   replyToTask: (taskId, replyMessage) => {
     return run(
       DATABASE_URL
-        ? `UPDATE tasks SET status = 'completed', reply_message = ?, replied_at = NOW(), updated_at = NOW() WHERE task_id = ?`
-        : `UPDATE tasks SET status = 'completed', reply_message = ?, replied_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE task_id = ?`,
+        ? `UPDATE tasks SET status = 'submitted', reply_message = ?, replied_at = NOW(), updated_at = NOW() WHERE task_id = ?`
+        : `UPDATE tasks SET status = 'submitted', reply_message = ?, replied_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE task_id = ?`,
       [replyMessage, taskId]
+    );
+  },
+
+  approveTask: (taskId) => {
+    return run(
+      DATABASE_URL
+        ? `UPDATE tasks SET status = 'completed', updated_at = NOW() WHERE task_id = ?`
+        : `UPDATE tasks SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE task_id = ?`,
+      [taskId]
+    );
+  },
+
+  rejectTask: (taskId, reason) => {
+    return run(
+      DATABASE_URL
+        ? `UPDATE tasks SET status = 'accepted', reject_reason = ?, reply_message = NULL, replied_at = NULL, updated_at = NOW() WHERE task_id = ?`
+        : `UPDATE tasks SET status = 'accepted', reject_reason = ?, reply_message = NULL, replied_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE task_id = ?`,
+      [reason, taskId]
     );
   },
 
@@ -235,6 +328,150 @@ const TaskDB = {
 
   getGroupMembers: (groupId) => {
     return queryAll(`SELECT * FROM group_members WHERE group_id = ?`, [groupId]);
+  },
+
+  // ดึงงานทั้งหมดในกลุ่ปเรียงตามวันที่สร้าง (เก่าสุดก่อน)
+  getAllTasksChronological: (groupId) => {
+    return queryAll(
+      `SELECT * FROM tasks WHERE group_id = ? ORDER BY created_at ASC`,
+      [groupId]
+    );
+  },
+
+  // ─── Chat Logs ───
+  saveChatLog: (groupId, userId, displayName, message) => {
+    return run(
+      `INSERT INTO chat_logs (group_id, user_id, display_name, message) VALUES (?, ?, ?, ?)`,
+      [groupId, userId, displayName, message]
+    );
+  },
+
+  // ดึงแชทในกลุ่มทั้งหมด เรียงจากเก่าสุด
+  getChatLogsChronological: (groupId) => {
+    return queryAll(
+      `SELECT * FROM chat_logs WHERE group_id = ? ORDER BY created_at ASC`,
+      [groupId]
+    );
+  },
+
+  // ดึงแชทล่าสุด N ข้อความ (สำหรับบริบท AI)
+  getRecentChatLogs: (groupId, limit = 20) => {
+    return queryAll(
+      `SELECT * FROM (
+        SELECT * FROM chat_logs WHERE group_id = ? ORDER BY created_at DESC LIMIT ?
+      ) sub ORDER BY created_at ASC`,
+      [groupId, limit]
+    );
+  },
+
+  // ดึงงานที่ยังไม่เสร็จทั้งหมดในกลุ่ม
+  getAllPendingTasksInGroup: (groupId) => {
+    return queryAll(
+      `SELECT * FROM tasks WHERE group_id = ? AND status != 'completed' ORDER BY created_at DESC`,
+      [groupId]
+    );
+  },
+
+  // ─── Points System ───
+
+  // เพิ่มแต้มให้ผู้ใช้
+  addPoints: async (groupId, userId, displayName, points, taskId, reason) => {
+    // upsert points record
+    if (DATABASE_URL) {
+      await run(
+        `INSERT INTO points (group_id, user_id, display_name, total_points, updated_at)
+         VALUES (?, ?, ?, ?, NOW())
+         ON CONFLICT (group_id, user_id) DO UPDATE SET
+           total_points = points.total_points + ?,
+           display_name = ?,
+           updated_at = NOW()`,
+        [groupId, userId, displayName, points, points, displayName]
+      );
+    } else {
+      const existing = await queryOne(`SELECT * FROM points WHERE group_id = ? AND user_id = ?`, [groupId, userId]);
+      if (existing) {
+        await run(`UPDATE points SET total_points = total_points + ?, display_name = ?, updated_at = CURRENT_TIMESTAMP WHERE group_id = ? AND user_id = ?`,
+          [points, displayName, groupId, userId]);
+      } else {
+        await run(`INSERT INTO points (group_id, user_id, display_name, total_points) VALUES (?, ?, ?, ?)`,
+          [groupId, userId, displayName, points]);
+      }
+    }
+    // log
+    await run(`INSERT INTO points_log (group_id, user_id, task_id, points, reason) VALUES (?, ?, ?, ?, ?)`,
+      [groupId, userId, taskId, points, reason]);
+  },
+
+  // อัปเดตสถิติเมื่อทำงานเสร็จ
+  recordTaskCompleted: async (groupId, userId, displayName, onTime) => {
+    if (DATABASE_URL) {
+      await run(
+        `INSERT INTO points (group_id, user_id, display_name, tasks_completed, tasks_on_time, current_streak, best_streak, updated_at)
+         VALUES (?, ?, ?, 1, ?, ?, ?, NOW())
+         ON CONFLICT (group_id, user_id) DO UPDATE SET
+           tasks_completed = points.tasks_completed + 1,
+           tasks_on_time = points.tasks_on_time + ?,
+           current_streak = CASE WHEN ? THEN points.current_streak + 1 ELSE 0 END,
+           best_streak = GREATEST(points.best_streak, CASE WHEN ? THEN points.current_streak + 1 ELSE 0 END),
+           display_name = ?,
+           updated_at = NOW()`,
+        [groupId, userId, displayName, onTime ? 1 : 0, onTime ? 1 : 0, onTime ? 1 : 0, onTime ? 1 : 0, onTime, onTime, displayName]
+      );
+    } else {
+      const existing = await queryOne(`SELECT * FROM points WHERE group_id = ? AND user_id = ?`, [groupId, userId]);
+      if (existing) {
+        const newStreak = onTime ? existing.current_streak + 1 : 0;
+        const bestStreak = Math.max(existing.best_streak, newStreak);
+        await run(
+          `UPDATE points SET tasks_completed = tasks_completed + 1, tasks_on_time = tasks_on_time + ?, current_streak = ?, best_streak = ?, display_name = ?, updated_at = CURRENT_TIMESTAMP WHERE group_id = ? AND user_id = ?`,
+          [onTime ? 1 : 0, newStreak, bestStreak, displayName, groupId, userId]
+        );
+      } else {
+        await run(
+          `INSERT INTO points (group_id, user_id, display_name, tasks_completed, tasks_on_time, current_streak, best_streak) VALUES (?, ?, ?, 1, ?, ?, ?)`,
+          [groupId, userId, displayName, onTime ? 1 : 0, onTime ? 1 : 0, onTime ? 1 : 0]
+        );
+      }
+    }
+  },
+
+  // ดูแต้มของตัวเอง
+  getPoints: (groupId, userId) => {
+    return queryOne(`SELECT * FROM points WHERE group_id = ? AND user_id = ?`, [groupId, userId]);
+  },
+
+  // อันดับในกลุ่ม (Top 10)
+  getLeaderboard: (groupId) => {
+    return queryAll(
+      `SELECT * FROM points WHERE group_id = ? AND total_points > 0 ORDER BY total_points DESC LIMIT 10`,
+      [groupId]
+    );
+  },
+
+  // ─── DM Support ───
+
+  // ดึงงานของ user ข้ามทุกกลุ่ม (สำหรับ DM)
+  getTasksByUserId: (userId, status = null) => {
+    let sql = `SELECT * FROM tasks WHERE assignee_id = ?`;
+    let params = [userId];
+    if (status) {
+      sql += ` AND status = ?`;
+      params.push(status);
+    }
+    sql += ` ORDER BY created_at DESC`;
+    return queryAll(sql, params);
+  },
+
+  // ดึงงานที่ user สั่ง (สำหรับ review)
+  getTasksByAssigner: (assignerId, status = null) => {
+    let sql = `SELECT * FROM tasks WHERE assigner_id = ?`;
+    let params = [assignerId];
+    if (status) {
+      sql += ` AND status = ?`;
+      params.push(status);
+    }
+    sql += ` ORDER BY created_at DESC`;
+    return queryAll(sql, params);
   }
 };
 
