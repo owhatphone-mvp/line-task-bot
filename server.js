@@ -842,10 +842,16 @@ async function handleApproveTask(replyToken, userId, displayName, text) {
 async function handleRejectTask(replyToken, userId, displayName, text) {
   const parts = text.replace(/^#(แก้ไข|reject)\s*/, '').trim().split(/\s+/);
   const taskId = parts[0];
-  const reason = parts.slice(1).join(' ') || 'กรุณาแก้ไขและส่งใหม่';
+  const reason = parts.slice(1).join(' ');
 
   if (!taskId) {
     await replyMessage(replyToken, 'รูปแบบ: #แก้ไข <รหัสงาน> <เหตุผล>\nตัวอย่าง: #แก้ไข ABC123 ข้อมูลไม่ครบ');
+    return;
+  }
+
+  // บังคับกรอกเหตุผลก่อนส่งกลับ
+  if (!reason) {
+    await replyMessage(replyToken, `📝 กรุณาระบุสิ่งที่ต้องแก้ไขด้วยครับ\n\nพิมพ์: #แก้ไข ${taskId} <สิ่งที่ต้องแก้>\nตัวอย่าง: #แก้ไข ${taskId} ข้อมูลยอดขายไม่ครบ ขาดเดือน มี.ค.`);
     return;
   }
 
@@ -2110,46 +2116,39 @@ function buildFlexGroupNotify(taskId, assignerName, assigneeNames, taskMessage, 
   };
 }
 
-// Flex: DM — งานมาแล้ว! (ส่งไป DM ผู้รับงาน)
+// Flex: DM — งานมาแล้ว! (ส่งไป DM ผู้รับงาน) — ธีมดำเขียว
 function buildFlexDMTaskAssigned(taskId, assignerName, assigneeName, taskMessage) {
   return {
     type: 'flex',
-    altText: `📌 มีงานใหม่! [${taskId}] ${taskMessage.substring(0, 60)}`,
+    altText: `📌 ${assignerName} มอบงานให้คุณ: ${taskMessage.substring(0, 60)}`,
     contents: {
       type: 'bubble',
       size: 'mega',
-      header: {
-        type: 'box', layout: 'horizontal', alignItems: 'center', backgroundColor: '#FF8C00', paddingAll: '20px',
-        contents: [
-          { type: 'text', text: '📬', size: 'xxl', flex: 0 },
-          { type: 'box', layout: 'vertical', flex: 1, margin: 'lg', contents: [
-            { type: 'text', text: 'มีงานใหม่มาให้คุณ!', color: '#FFFFFF', size: 'lg', weight: 'bold' },
-            { type: 'text', text: `รหัส ${taskId} | 💎 รับ +5 ทำเสร็จ +10~15`, color: '#FFFFFF99', size: 'xs' }
-          ]}
-        ]
-      },
       body: {
-        type: 'box', layout: 'vertical', paddingAll: '20px',
+        type: 'box', layout: 'vertical', paddingAll: '20px', backgroundColor: '#1A1A1A',
         contents: [
-          { type: 'text', text: taskMessage, size: 'md', color: '#333333', wrap: true, weight: 'bold' },
-          { type: 'separator', margin: 'lg' },
-          { type: 'box', layout: 'vertical', margin: 'lg', spacing: 'md', contents: [
-            createFlexRow('สั่งโดย', assignerName, '#666666'),
-            createFlexRow('มอบให้', assigneeName, '#FF8C00'),
-            createFlexRow('สถานะ', '⏳ รอรับภารกิจ', '#FF8C00')
+          { type: 'text', text: taskMessage, size: 'md', color: '#00FF88', wrap: true, weight: 'bold' },
+          { type: 'separator', margin: 'lg', color: '#333333' },
+          { type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm', contents: [
+            { type: 'box', layout: 'horizontal', contents: [
+              { type: 'text', text: 'สั่งโดย', size: 'sm', color: '#66BB6A', flex: 3 },
+              { type: 'text', text: assignerName, size: 'sm', color: '#00FF88', flex: 5, align: 'end', weight: 'bold' }
+            ]},
+            { type: 'box', layout: 'horizontal', contents: [
+              { type: 'text', text: 'มอบให้', size: 'sm', color: '#66BB6A', flex: 3 },
+              { type: 'text', text: assigneeName, size: 'sm', color: '#00FF88', flex: 5, align: 'end', weight: 'bold' }
+            ]}
           ]},
-          { type: 'box', layout: 'vertical', margin: 'lg', backgroundColor: '#FFF3E0', paddingAll: '10px', cornerRadius: '8px', contents: [
-            { type: 'text', text: randomMotivation(), size: 'sm', color: '#FF8C00', align: 'center', weight: 'bold' }
-          ]}
+          { type: 'separator', margin: 'lg', color: '#333333' },
+          { type: 'text', text: '📅 กดรับทราบแล้วระบุวัน-เวลาที่จะส่งงาน', size: 'xs', color: '#66BB6A', margin: 'lg', wrap: true }
         ]
       },
       footer: {
-        type: 'box', layout: 'vertical', paddingAll: '15px',
+        type: 'box', layout: 'vertical', paddingAll: '15px', backgroundColor: '#1A1A1A',
         contents: [
-          { type: 'button', action: { type: 'message', label: '💪 รับภารกิจ', text: `#รับงาน ${taskId}` }, style: 'primary', color: '#FF8C00', height: 'sm' }
+          { type: 'button', action: { type: 'message', label: '✅ รับทราบ', text: `#รับงาน ${taskId}` }, style: 'primary', color: '#00C853', height: 'sm' }
         ]
-      },
-      styles: { footer: { separator: true } }
+      }
     }
   };
 }
@@ -2224,10 +2223,10 @@ function buildFlexReviewRequest(taskId, assignerName, submitterName, taskMessage
         ]
       },
       footer: {
-        type: 'box', layout: 'horizontal', paddingAll: '15px', spacing: 'md',
+        type: 'box', layout: 'vertical', paddingAll: '15px', spacing: 'md',
         contents: [
-          { type: 'button', action: { type: 'message', label: '✅ อนุมัติ', text: `#อนุมัติ ${taskId}` }, style: 'primary', color: '#43A047', height: 'sm', flex: 1 },
-          { type: 'button', action: { type: 'message', label: '🔄 แก้ไข', text: `#แก้ไข ${taskId} ` }, style: 'primary', color: '#E53935', height: 'sm', flex: 1 }
+          { type: 'button', action: { type: 'message', label: '✅ อนุมัติ', text: `#อนุมัติ ${taskId}` }, style: 'primary', color: '#43A047', height: 'sm' },
+          { type: 'text', text: `ส่งกลับแก้ไข → พิมพ์:\n#แก้ไข ${taskId} <สิ่งที่ต้องแก้>`, size: 'xxs', color: '#999999', margin: 'md', wrap: true, align: 'center' }
         ]
       },
       styles: { footer: { separator: true } }
@@ -2425,46 +2424,60 @@ app.get('/api/dashboard/activity/:groupId', async (req, res) => {
   }
 });
 
-// ===== ระบบทวงงานอัตโนมัติ =====
-// ตรวจสอบทุก 5 นาที ว่ามีงานเลยกำหนดไหม
+// ===== ระบบเตือนงานอัตโนมัติ =====
+// ตรวจสอบทุก 5 นาที: เตือนเช้าวันส่ง, เตือน 1 ชม.ก่อนกำหนด, ทวงงานเลยกำหนด
 setInterval(async () => {
   try {
+    // 1) เตือนเช้าวันส่ง (งานข้ามวัน ที่กำหนดส่งวันนี้)
+    const tasksDueToday = await TaskDB.getTasksDueToday();
+    for (const task of tasksDueToday) {
+      console.log(`📅 Due today: ${task.task_id}`);
+      try {
+        const dl = formatDeadline(task.deadline);
+        await sendDM(task.assignee_id, [`📅 วันนี้ต้องส่งงานนะครับ\n📝 ${task.message}\n⏰ กำหนด ${dl}\n\nพิมพ์ #ส่งงาน ${task.task_id} <ข้อความ>`]);
+        await TaskDB.markReminderDaySent(task.task_id);
+      } catch (err) {
+        console.error(`Error day reminder ${task.task_id}:`, err.message);
+      }
+    }
+
+    // 2) เตือน 1 ชม. ก่อนกำหนดส่ง
+    const tasksDueSoon = await TaskDB.getTasksDueSoon();
+    for (const task of tasksDueSoon) {
+      console.log(`⏰ Due in 1h: ${task.task_id}`);
+      try {
+        const dl = formatDeadline(task.deadline);
+        await sendDM(task.assignee_id, [`⏰ เหลืออีก 1 ชม. ก่อนถึงกำหนดส่งครับ!\n📝 ${task.message}\n⏰ กำหนด ${dl}\n\nพิมพ์ #ส่งงาน ${task.task_id} <ข้อความ>`]);
+        await TaskDB.markReminder1hSent(task.task_id);
+      } catch (err) {
+        console.error(`Error 1h reminder ${task.task_id}:`, err.message);
+      }
+    }
+
+    // 3) ทวงงานเลยกำหนด
     const overdueTasks = await TaskDB.getOverdueTasks();
-    
     for (const task of overdueTasks) {
-      console.log(`⏰ Overdue task found: ${task.task_id} - ${task.message}`);
-      
-      // ส่ง DM ทวงงานไปหาผู้รับงาน
+      console.log(`🚨 Overdue: ${task.task_id}`);
       try {
         const flexMsg = buildFlexOverdueReminder(task.task_id, task.assignee_name, task.message, formatDeadline(task.deadline));
         const dmSent = await sendDM(task.assignee_id, [flexMsg]);
 
         if (!dmSent) {
-          // ถ้า DM ไม่ได้ → ส่งในกลุ่ปแทน
-          const mentionMsg = {
-            type: 'textV2',
-            text: `⚠️ {assignee} งานรหัส ${task.task_id} เลยกำหนดแล้ว! กรุณาส่งงานด้วยครับ`,
-            substitution: {
-              assignee: { type: 'mention', mentionee: { type: 'user', userId: task.assignee_id } }
-            }
-          };
           await client.pushMessage({
             to: task.group_id,
-            messages: [flexMsg, mentionMsg]
+            messages: [{ type: 'text', text: `⚠️ งาน "${task.message}" เลยกำหนดแล้ว! กรุณาส่งงานด้วยครับ` }]
           });
         }
         
-        // บันทึกว่าส่ง reminder แล้ว
         await TaskDB.markReminderSent(task.task_id);
-        console.log(`✅ Reminder sent for task ${task.task_id}`);
       } catch (err) {
-        console.error(`Error sending reminder for task ${task.task_id}:`, err.message);
+        console.error(`Error overdue reminder ${task.task_id}:`, err.message);
       }
     }
   } catch (err) {
-    console.error('Error checking overdue tasks:', err);
+    console.error('Error in reminder system:', err);
   }
-}, 5 * 60 * 1000); // ทุก 5 นาที
+}, 5 * 60 * 1000);
 
 console.log('⏰ Auto-reminder system started (checks every 5 minutes)');
 

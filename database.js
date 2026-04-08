@@ -41,6 +41,9 @@ if (DATABASE_URL) {
       `);
       // Migration: add reject_reason if not exists
       try { await db.query(`ALTER TABLE tasks ADD COLUMN reject_reason TEXT`); } catch(e) {}
+      // Migration: add reminder columns
+      try { await db.query(`ALTER TABLE tasks ADD COLUMN reminder_1h_sent INTEGER DEFAULT 0`); } catch(e) {}
+      try { await db.query(`ALTER TABLE tasks ADD COLUMN reminder_day_sent INTEGER DEFAULT 0`); } catch(e) {}
       await db.query(`
         CREATE TABLE IF NOT EXISTS group_members (
           id SERIAL PRIMARY KEY,
@@ -273,6 +276,46 @@ const TaskDB = {
 
   markReminderSent: (taskId) => {
     return run(`UPDATE tasks SET reminder_sent = 1 WHERE task_id = ?`, [taskId]);
+  },
+
+  // งานที่ถึงกำหนดภายใน 1 ชม. แต่ยังไม่เตือน
+  getTasksDueSoon: () => {
+    const now = new Date();
+    const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
+    return queryAll(
+      `SELECT * FROM tasks 
+       WHERE deadline IS NOT NULL 
+       AND deadline > ? 
+       AND deadline <= ? 
+       AND status = 'accepted'
+       AND reminder_1h_sent = 0`,
+      [now.toISOString(), oneHourLater.toISOString()]
+    );
+  },
+
+  markReminder1hSent: (taskId) => {
+    return run(`UPDATE tasks SET reminder_1h_sent = 1 WHERE task_id = ?`, [taskId]);
+  },
+
+  // งานที่กำหนดส่งวันนี้ (ข้ามวัน) แต่ยังไม่เตือนเช้า
+  getTasksDueToday: () => {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
+    return queryAll(
+      `SELECT * FROM tasks 
+       WHERE deadline IS NOT NULL 
+       AND deadline >= ? 
+       AND deadline < ? 
+       AND status = 'accepted'
+       AND reminder_day_sent = 0
+       AND DATE(accepted_at) < DATE(deadline)`,
+      [startOfDay, endOfDay]
+    );
+  },
+
+  markReminderDaySent: (taskId) => {
+    return run(`UPDATE tasks SET reminder_day_sent = 1 WHERE task_id = ?`, [taskId]);
   },
 
   replyToTask: (taskId, replyMessage) => {
