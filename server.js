@@ -1019,13 +1019,20 @@ async function createTask(event, mentionees, assignerName) {
     const groupFlex = buildFlexGroupNotify(taskId, assignerName, assigneeNames, taskMessage, hasDMFail);
 
     try {
+      console.log('Group flex payload:', JSON.stringify(groupFlex));
       await client.replyMessage({
         replyToken: event.replyToken,
         messages: [groupFlex]
       });
+      console.log('Group flex sent OK');
     } catch (err) {
-      console.error('Error sending group flex:', err);
-      await replyMessage(event.replyToken, `📌 งานใหม่ ${taskId}: ${taskMessage}\nมอบให้: ${assigneeNames}`);
+      console.error('Error sending group flex:', err?.message || err);
+      try {
+        const shortMsg = taskMessage.length > 40 ? taskMessage.substring(0, 40) + '…' : taskMessage;
+        await replyMessage(event.replyToken, `📌 ${shortMsg}\n${assignerName} → ${assigneeNames}`);
+      } catch (e2) {
+        console.error('Fallback also failed:', e2?.message || e2);
+      }
     }
   }
 }
