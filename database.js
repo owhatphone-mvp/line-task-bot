@@ -475,4 +475,4 @@ const TaskDB = {
   }
 };
 
-module.exports = { db, TaskDB };
+module.exports = { db, TaskDB, queryAll, queryOne };

@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MVP Job Tracker — Dashboard</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700;800;900&display=swap');
+
+    :root {
+      --bg: #0f0f1a;
+      --card: #1a1a2e;
+      --card-hover: #222240;
+      --border: #2a2a4a;
+      --accent: #FF8C00;
+      --accent2: #7C4DFF;
+      --green: #43A047;
+      --blue: #1E88E5;
+      --red: #E53935;
+      --yellow: #F9A825;
+      --text: #e0e0e0;
+      --text2: #888;
+      --glow: rgba(255, 140, 0, 0.15);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Prompt', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ═══ Animated BG ═══ */
+    .bg-particles {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 0; overflow: hidden;
+    }
+    .bg-particles .orb {
+      position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.08;
+      animation: floatOrb 20s ease-in-out infinite;
+    }
+    .bg-particles .orb:nth-child(1) { width: 400px; height: 400px; background: var(--accent); top: -100px; left: -100px; }
+    .bg-particles .orb:nth-child(2) { width: 300px; height: 300px; background: var(--accent2); bottom: -50px; right: -50px; animation-delay: -7s; }
+    .bg-particles .orb:nth-child(3) { width: 250px; height: 250px; background: var(--blue); top: 40%; left: 50%; animation-delay: -14s; }
+    @keyframes floatOrb { 0%,100%{transform:translate(0,0)} 33%{transform:translate(30px,-40px)} 66%{transform:translate(-20px,30px)} }
+
+    /* ═══ Layout ═══ */
+    .app { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+    /* ═══ Header ═══ */
+    .header {
+      text-align: center; padding: 30px 0 20px;
+    }
+    .header h1 {
+      font-size: 2rem; font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+    }
+    .header p { color: var(--text2); font-size: 0.85rem; margin-top: 4px; }
+    .header .status-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green); margin-right: 6px; animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* ═══ Loading ═══ */
+    .loading-screen {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 60vh; gap: 16px;
+    }
+    .spinner {
+      width: 48px; height: 48px; border: 4px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ═══ Stat Cards ═══ */
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px; margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 20px; text-align: center;
+      transition: all 0.3s ease; position: relative; overflow: hidden;
+    }
+    .stat-card:hover { transform: translateY(-3px); border-color: var(--accent); box-shadow: 0 8px 32px var(--glow); }
+    .stat-card .icon { font-size: 1.6rem; margin-bottom: 8px; }
+    .stat-card .value {
+      font-size: 2rem; font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), #ffb347);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .stat-card .label { font-size: 0.75rem; color: var(--text2); margin-top: 2px; }
+    .stat-card.green .value { background: linear-gradient(135deg, var(--green), #66BB6A); -webkit-background-clip: text; }
+    .stat-card.blue .value { background: linear-gradient(135deg, var(--blue), #42A5F5); -webkit-background-clip: text; }
+    .stat-card.purple .value { background: linear-gradient(135deg, var(--accent2), #B388FF); -webkit-background-clip: text; }
+    .stat-card.red .value { background: linear-gradient(135deg, var(--red), #EF5350); -webkit-background-clip: text; }
+    .stat-card .bar {
+      position: absolute; bottom: 0; left: 0; height: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      transition: width 1s ease;
+    }
+
+    /* ═══ Section Tabs ═══ */
+    .section-tabs {
+      display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .tab-btn {
+      padding: 8px 18px; border-radius: 20px; border: 1px solid var(--border);
+      background: var(--card); color: var(--text2); font-size: 0.82rem;
+      font-family: 'Prompt'; cursor: pointer; transition: all 0.3s;
+    }
+    .tab-btn:hover { border-color: var(--accent); color: var(--text); }
+    .tab-btn.active {
+      background: linear-gradient(135deg, var(--accent), #ff6600);
+      color: #fff; border-color: transparent; font-weight: 600;
+    }
+
+    /* ═══ Two-Column Layout ═══ */
+    .main-grid {
+      display: grid; grid-template-columns: 1fr 340px; gap: 20px;
+    }
+    @media (max-width: 800px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ═══ Panel ═══ */
+    .panel {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .panel-header h2 { font-size: 0.95rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .panel-body { padding: 16px 20px; }
+
+    /* ═══ Task List ═══ */
+    .task-item {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 14px 0; border-bottom: 1px solid var(--border);
+      transition: all 0.2s;
+    }
+    .task-item:last-child { border-bottom: none; }
+    .task-item:hover { background: var(--card-hover); margin: 0 -20px; padding-left: 20px; padding-right: 20px; border-radius: 8px; }
+    .task-status-icon {
+      width: 36px; height: 36px; border-radius: 10px; display: flex;
+      align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0;
+    }
+    .task-status-icon.pending { background: #FF8C0020; }
+    .task-status-icon.accepted { background: #1E88E520; }
+    .task-status-icon.submitted { background: #F9A82520; }
+    .task-status-icon.completed { background: #43A04720; }
+    .task-info { flex: 1; min-width: 0; }
+    .task-info .task-msg { font-size: 0.85rem; font-weight: 500; margin-bottom: 4px; 
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .task-info .task-meta { font-size: 0.72rem; color: var(--text2); display: flex; gap: 8px; flex-wrap: wrap; }
+    .task-badge {
+      font-size: 0.65rem; padding: 2px 8px; border-radius: 10px; font-weight: 600;
+    }
+    .task-badge.pending { background: #FF8C0025; color: #FF8C00; }
+    .task-badge.accepted { background: #1E88E525; color: #1E88E5; }
+    .task-badge.submitted { background: #F9A82525; color: #F9A825; }
+    .task-badge.completed { background: #43A04725; color: #43A047; }
+
+    /* ═══ Leaderboard ═══ */
+    .lb-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 0; border-bottom: 1px solid var(--border);
+    }
+    .lb-item:last-child { border-bottom: none; }
+    .lb-rank {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 0.8rem; flex-shrink: 0;
+    }
+    .lb-rank.gold { background: linear-gradient(135deg, #FFD700, #FFA000); color: #000; }
+    .lb-rank.silver { background: linear-gradient(135deg, #C0C0C0, #9E9E9E); color: #000; }
+    .lb-rank.bronze { background: linear-gradient(135deg, #CD7F32, #A0522D); color: #fff; }
+    .lb-rank.normal { background: var(--border); color: var(--text2); }
+    .lb-info { flex: 1; }
+    .lb-name { font-size: 0.85rem; font-weight: 600; }
+    .lb-stats { font-size: 0.7rem; color: var(--text2); }
+    .lb-points {
+      font-size: 1.1rem; font-weight: 800;
+      background: linear-gradient(135deg, var(--accent2), #B388FF);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .lb-points span { font-size: 0.65rem; -webkit-text-fill-color: var(--text2); }
+
+    /* ═══ Activity Feed ═══ */
+    .activity-item {
+      display: flex; gap: 10px; padding: 10px 0;
+      border-bottom: 1px solid var(--border); font-size: 0.78rem;
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-dot {
+      width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0;
+    }
+    .activity-text { color: var(--text2); line-height: 1.5; }
+    .activity-text strong { color: var(--text); font-weight: 600; }
+    .activity-time { font-size: 0.65rem; color: var(--text2); margin-top: 2px; opacity: 0.6; }
+
+    /* ═══ Empty State ═══ */
+    .empty-state {
+      text-align: center; padding: 40px 20px; color: var(--text2);
+    }
+    .empty-state .icon { font-size: 2.5rem; margin-bottom: 10px; opacity: 0.4; }
+    .empty-state p { font-size: 0.85rem; }
+
+    /* ═══ Progress Ring ═══ */
+    .progress-ring-wrap {
+      display: flex; align-items: center; justify-content: center; padding: 20px 0;
+    }
+    .progress-ring { position: relative; width: 120px; height: 120px; }
+    .progress-ring svg { transform: rotate(-90deg); }
+    .progress-ring circle { fill: none; stroke-width: 8; stroke-linecap: round; }
+    .progress-ring .bg-ring { stroke: var(--border); }
+    .progress-ring .fg-ring { stroke: url(#grad); transition: stroke-dashoffset 1.5s ease; }
+    .progress-ring .center-text {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      text-align: center;
+    }
+    .progress-ring .pct { font-size: 1.6rem; font-weight: 800; color: var(--accent); }
+    .progress-ring .pct-label { font-size: 0.6rem; color: var(--text2); }
+
+    /* ═══ Refresh button ═══ */
+    .refresh-btn {
+      background: none; border: 1px solid var(--border); color: var(--text2);
+      padding: 4px 12px; border-radius: 8px; font-size: 0.72rem; cursor: pointer;
+      font-family: 'Prompt'; transition: all 0.3s;
+    }
+    .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ═══ Fade in anim ═══ */
+    .fade-in { animation: fadeIn 0.5s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* ═══ No group selected ═══ */
+    .group-selector {
+      display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 16px 0;
+    }
+    .group-btn {
+      padding: 10px 20px; border-radius: 12px; border: 1px solid var(--border);
+      background: var(--card); color: var(--text); cursor: pointer;
+      font-family: 'Prompt'; font-size: 0.85rem; transition: all 0.3s;
+    }
+    .group-btn:hover { border-color: var(--accent); background: var(--card-hover); }
+    .group-btn.active { background: linear-gradient(135deg, var(--accent), #ff6600); border-color: transparent; color: #fff; font-weight: 600; }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div class="bg-particles">
+    <div class="orb"></div><div class="orb"></div><div class="orb"></div>
+  </div>
+
+  <div class="app">
+    <!-- Header -->
+    <div class="header fade-in">
+      <h1>MVP Job Tracker</h1>
+      <p><span class="status-dot"></span>Dashboard — ติดตามงานแบบเรียลไทม์</p>
+    </div>
+
+    <!-- Group Selector -->
+    <div id="group-area" class="fade-in">
+      <div class="group-selector" id="group-selector"></div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="loading-screen" style="display:none">
+      <div class="spinner"></div>
+      <p style="color:var(--text2); font-size:0.85rem">กำลังโหลดข้อมูล...</p>
+    </div>
+
+    <!-- Dashboard Content -->
+    <div id="dashboard" style="display:none">
+
+      <!-- Stats -->
+      <div class="stats-grid fade-in" id="stats-grid"></div>
+
+      <!-- Completion Progress -->
+      <div style="text-align:center; margin-bottom: 20px;" class="fade-in">
+        <div class="progress-ring-wrap">
+          <div class="progress-ring">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <defs>
+                <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#FF8C00"/>
+                  <stop offset="100%" style="stop-color:#7C4DFF"/>
+                </linearGradient>
+              </defs>
+              <circle class="bg-ring" cx="60" cy="60" r="52"/>
+              <circle class="fg-ring" id="progress-ring" cx="60" cy="60" r="52"
+                stroke-dasharray="326.73" stroke-dashoffset="326.73"/>
+            </svg>
+            <div class="center-text">
+              <div class="pct" id="completion-pct">0%</div>
+              <div class="pct-label">เสร็จแล้ว</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabs for tasks -->
+      <div class="section-tabs fade-in" id="task-tabs">
+        <button class="tab-btn active" data-status="all">ทั้งหมด</button>
+        <button class="tab-btn" data-status="pending">⏳ รอรับ</button>
+        <button class="tab-btn" data-status="accepted">💪 กำลังทำ</button>
+        <button class="tab-btn" data-status="submitted">📨 รอตรวจ</button>
+        <button class="tab-btn" data-status="completed">✅ เสร็จแล้ว</button>
+      </div>
+
+      <!-- Main Grid -->
+      <div class="main-grid fade-in">
+        <!-- Left: Task List -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2>📋 รายการงาน</h2>
+            <button class="refresh-btn" onclick="loadDashboard()">🔄 รีเฟรช</button>
+          </div>
+          <div class="panel-body" id="task-list" style="max-height: 500px; overflow-y: auto;"></div>
+        </div>
+
+        <!-- Right: Sidebar -->
+        <div style="display:flex; flex-direction:column; gap:20px;">
+          <!-- Leaderboard -->
+          <div class="panel">
+            <div class="panel-header">
+              <h2>🏆 อันดับแต้มสะสม</h2>
+            </div>
+            <div class="panel-body" id="leaderboard"></div>
+          </div>
+
+          <!-- Recent Activity -->
+          <div class="panel">
+            <div class="panel-header">
+              <h2>⚡ กิจกรรมล่าสุด</h2>
+            </div>
+            <div class="panel-body" id="activity-feed" style="max-height: 300px; overflow-y: auto;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '';  // same origin
+    let currentGroupId = null;
+    let currentFilter = 'all';
+
+    // ═══ Init ═══
+    async function init() {
+      try {
+        const res = await fetch(`${API_BASE}/api/dashboard/groups`);
+        const groups = await res.json();
+
+        if (groups.length === 0) {
+          document.getElementById('group-selector').innerHTML =
+            '<p style="color:var(--text2)">ยังไม่มีข้อมูลกลุ่ม</p>';
+          return;
+        }
+
+        const selector = document.getElementById('group-selector');
+        groups.forEach((g, i) => {
+          const btn = document.createElement('button');
+          btn.className = 'group-btn' + (i === 0 ? ' active' : '');
+          btn.textContent = `กลุ่ม ${i + 1} (${g.members} คน, ${g.tasks} งาน)`;
+          btn.onclick = () => {
+            document.querySelectorAll('.group-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentGroupId = g.group_id;
+            loadDashboard();
+          };
+          selector.appendChild(btn);
+        });
+
+        currentGroupId = groups[0].group_id;
+        loadDashboard();
+      } catch (err) {
+        console.error('Init error:', err);
+        document.getElementById('group-selector').innerHTML =
+          '<p style="color:var(--red)">โหลดข้อมูลไม่ได้ ลองรีเฟรชหน้า</p>';
+      }
+    }
+
+    // ═══ Load Dashboard ═══
+    async function loadDashboard() {
+      if (!currentGroupId) return;
+      document.getElementById('loading').style.display = 'flex';
+      document.getElementById('dashboard').style.display = 'none';
+
+      try {
+        const [stats, leaders, tasks, activity] = await Promise.all([
+          fetch(`${API_BASE}/api/dashboard/stats/${currentGroupId}`).then(r => r.json()),
+          fetch(`${API_BASE}/api/dashboard/leaderboard/${currentGroupId}`).then(r => r.json()),
+          fetch(`${API_BASE}/api/dashboard/tasks/${currentGroupId}?status=${currentFilter}`).then(r => r.json()),
+          fetch(`${API_BASE}/api/dashboard/activity/${currentGroupId}`).then(r => r.json())
+        ]);
+
+        renderStats(stats);
+        renderLeaderboard(leaders);
+        renderTasks(tasks);
+        renderActivity(activity);
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('dashboard').style.display = 'block';
+      } catch (err) {
+        console.error('Load error:', err);
+        document.getElementById('loading').innerHTML =
+          '<p style="color:var(--red)">โหลดข้อมูลไม่ได้</p>';
+      }
+    }
+
+    // ═══ Render Stats ═══
+    function renderStats(s) {
+      const completionRate = s.total_tasks > 0 ? Math.round((s.completed / s.total_tasks) * 100) : 0;
+
+      document.getElementById('stats-grid').innerHTML = `
+        <div class="stat-card">
+          <div class="icon">📋</div>
+          <div class="value">${s.total_tasks}</div>
+          <div class="label">งานทั้งหมด</div>
+          <div class="bar" style="width:100%"></div>
+        </div>
+        <div class="stat-card">
+          <div class="icon">⏳</div>
+          <div class="value">${s.pending + s.accepted}</div>
+          <div class="label">กำลังดำเนินการ</div>
+          <div class="bar" style="width:${s.total_tasks ? ((s.pending + s.accepted) / s.total_tasks * 100) : 0}%"></div>
+        </div>
+        <div class="stat-card blue">
+          <div class="icon">📨</div>
+          <div class="value">${s.submitted}</div>
+          <div class="label">รอตรวจ</div>
+          <div class="bar" style="width:${s.total_tasks ? (s.submitted / s.total_tasks * 100) : 0}%"></div>
+        </div>
+        <div class="stat-card green">
+          <div class="icon">✅</div>
+          <div class="value">${s.completed}</div>
+          <div class="label">เสร็จแล้ว</div>
+          <div class="bar" style="width:${s.total_tasks ? (s.completed / s.total_tasks * 100) : 0}%"></div>
+        </div>
+        <div class="stat-card purple">
+          <div class="icon">👥</div>
+          <div class="value">${s.members}</div>
+          <div class="label">สมาชิก</div>
+        </div>
+      `;
+
+      // Update progress ring
+      const circ = 326.73;
+      const offset = circ - (circ * completionRate / 100);
+      document.getElementById('progress-ring').style.strokeDashoffset = offset;
+      document.getElementById('completion-pct').textContent = completionRate + '%';
+    }
+
+    // ═══ Render Leaderboard ═══
+    function renderLeaderboard(leaders) {
+      const el = document.getElementById('leaderboard');
+      if (!leaders.length) {
+        el.innerHTML = '<div class="empty-state"><div class="icon">🏆</div><p>ยังไม่มีแต้มสะสม</p></div>';
+        return;
+      }
+
+      el.innerHTML = leaders.map((l, i) => {
+        const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : 'normal';
+        const medals = ['🥇','🥈','🥉'];
+        return `
+          <div class="lb-item">
+            <div class="lb-rank ${rankClass}">${medals[i] || (i + 1)}</div>
+            <div class="lb-info">
+              <div class="lb-name">${esc(l.display_name)}</div>
+              <div class="lb-stats">${l.tasks_completed || 0} งานเสร็จ · 🔥 ${l.current_streak || 0} streak</div>
+            </div>
+            <div class="lb-points">${l.total_points} <span>แต้ม</span></div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // ═══ Render Tasks ═══
+    function renderTasks(tasks) {
+      const el = document.getElementById('task-list');
+      if (!tasks.length) {
+        el.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>ไม่มีงานในหมวดนี้</p></div>';
+        return;
+      }
+
+      const statusIcons = { pending: '⏳', accepted: '💪', submitted: '📨', completed: '✅' };
+      const statusLabels = { pending: 'รอรับ', accepted: 'กำลังทำ', submitted: 'รอตรวจ', completed: 'เสร็จแล้ว' };
+
+      el.innerHTML = tasks.map(t => {
+        const icon = statusIcons[t.status] || '❓';
+        const label = statusLabels[t.status] || t.status;
+        const dateStr = t.created_at ? timeAgo(new Date(t.created_at)) : '';
+        const deadlineStr = t.deadline ? formatDeadline(t.deadline) : '';
+
+        return `
+          <div class="task-item">
+            <div class="task-status-icon ${t.status}">${icon}</div>
+            <div class="task-info">
+              <div class="task-msg" title="${esc(t.message)}">${esc(t.message)}</div>
+              <div class="task-meta">
+                <span>🆔 ${esc(t.task_id)}</span>
+                <span>👤 ${esc(t.assignee_name || '-')}</span>
+                <span>👨‍💼 ${esc(t.assigner_name || '-')}</span>
+                ${deadlineStr ? `<span>⏰ ${deadlineStr}</span>` : ''}
+                <span>${dateStr}</span>
+              </div>
+            </div>
+            <span class="task-badge ${t.status}">${label}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // ═══ Render Activity ═══
+    function renderActivity(data) {
+      const el = document.getElementById('activity-feed');
+      const items = [];
+
+      // Merge tasks and points log by time
+      if (data.pointsLog) {
+        data.pointsLog.forEach(p => {
+          items.push({
+            time: new Date(p.created_at),
+            html: `<strong>${esc(p.display_name || 'ใครสักคน')}</strong> ได้รับ <strong style="color:var(--accent2)">+${p.points} แต้ม</strong> ${esc(p.reason || '')}`,
+            color: 'var(--accent2)'
+          });
+        });
+      }
+
+      if (data.tasks) {
+        data.tasks.forEach(t => {
+          const statusTexts = {
+            pending: `<strong>${esc(t.assigner_name)}</strong> สั่งงาน <strong>${esc(t.assignee_name)}</strong>: ${esc((t.message || '').substring(0, 40))}`,
+            accepted: `<strong>${esc(t.assignee_name)}</strong> รับงาน <strong>${esc(t.task_id)}</strong>`,
+            submitted: `<strong>${esc(t.assignee_name)}</strong> ส่งงาน <strong>${esc(t.task_id)}</strong> รอตรวจ`,
+            completed: `งาน <strong>${esc(t.task_id)}</strong> เสร็จแล้ว!`
+          };
+          const colors = { pending: 'var(--accent)', accepted: 'var(--blue)', submitted: 'var(--yellow)', completed: 'var(--green)' };
+
+          items.push({
+            time: new Date(t.updated_at || t.created_at),
+            html: statusTexts[t.status] || `งาน ${esc(t.task_id)} — ${t.status}`,
+            color: colors[t.status] || 'var(--text2)'
+          });
+        });
+      }
+
+      items.sort((a, b) => b.time - a.time);
+      const display = items.slice(0, 15);
+
+      if (!display.length) {
+        el.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>ยังไม่มีกิจกรรม</p></div>';
+        return;
+      }
+
+      el.innerHTML = display.map(item => `
+        <div class="activity-item">
+          <div class="activity-dot" style="background:${item.color}"></div>
+          <div>
+            <div class="activity-text">${item.html}</div>
+            <div class="activity-time">${timeAgo(item.time)}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ═══ Tab clicks ═══
+    document.getElementById('task-tabs').addEventListener('click', (e) => {
+      if (!e.target.classList.contains('tab-btn')) return;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      currentFilter = e.target.dataset.status;
+      loadFilteredTasks();
+    });
+
+    async function loadFilteredTasks() {
+      try {
+        const tasks = await fetch(`${API_BASE}/api/dashboard/tasks/${currentGroupId}?status=${currentFilter}`).then(r => r.json());
+        renderTasks(tasks);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // ═══ Helpers ═══
+    function esc(str) {
+      if (!str) return '';
+      const d = document.createElement('div');
+      d.textContent = str;
+      return d.innerHTML;
+    }
+
+    function timeAgo(date) {
+      const now = new Date();
+      const diff = Math.floor((now - date) / 1000);
+      if (diff < 60) return 'เมื่อกี้';
+      if (diff < 3600) return Math.floor(diff / 60) + ' นาทีที่แล้ว';
+      if (diff < 86400) return Math.floor(diff / 3600) + ' ชม.ที่แล้ว';
+      if (diff < 604800) return Math.floor(diff / 86400) + ' วันที่แล้ว';
+      return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+    }
+
+    function formatDeadline(dl) {
+      const d = new Date(dl);
+      const now = new Date();
+      const isOverdue = d < now;
+      const str = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      return isOverdue ? `${str} (เลยกำหนด!)` : str;
+    }
+
+    // ═══ Auto-refresh every 30 seconds ═══
+    setInterval(() => {
+      if (currentGroupId) loadDashboard();
+    }, 30000);
+
+    // Start
+    init();
+  </script>
+</body>
+</html>

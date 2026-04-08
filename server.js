@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
-const { TaskDB } = require('./database');
+const { TaskDB, queryAll, queryOne } = require('./database');
 const OpenAI = require('openai');
 
 const app = express();
@@ -2271,12 +2271,12 @@ function buildFlexTaskRejected(taskId, assignerName, assigneeName, taskMessage, 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Serve static files (dashboard)
+const path = require('path');
+app.use('/static', express.static(path.join(__dirname, 'public')));
+
 app.get('/', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    message: 'LINE Task Bot is running',
-    timestamp: new Date().toISOString()
-  });
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
 // ดึงข้อมูลงานทั้งหมดในกลุ่ม (สำหรับ debug)
@@ -2284,6 +2284,125 @@ app.get('/api/tasks/:groupId', async (req, res) => {
   try {
     const tasks = await TaskDB.getAllTasksInGroup(req.params.groupId);
     res.json(tasks);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════
+// ═══ Dashboard API Endpoints ═══
+// ═══════════════════════════════════════════
+
+// CORS for dashboard
+app.use('/api/dashboard', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  next();
+});
+
+// ดึงรายชื่อกลุ่มทั้งหมด
+app.get('/api/dashboard/groups', async (req, res) => {
+  try {
+    const groups = await queryAll(
+      `SELECT DISTINCT group_id FROM group_members`
+    );
+    // ดึงชื่อกลุ่มจากข้อมูลงาน
+    const result = [];
+    for (const g of groups) {
+      const memberCount = await queryOne(
+        `SELECT COUNT(*) as cnt FROM group_members WHERE group_id = ?`, [g.group_id]
+      );
+      const taskCount = await queryOne(
+        `SELECT COUNT(*) as cnt FROM tasks WHERE group_id = ?`, [g.group_id]
+      );
+      result.push({
+        group_id: g.group_id,
+        members: memberCount?.cnt || 0,
+        tasks: taskCount?.cnt || 0
+      });
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// สรุปภาพรวม (stats) ของกลุ่ม
+app.get('/api/dashboard/stats/:groupId', async (req, res) => {
+  try {
+    const gid = req.params.groupId;
+    const [total, pending, accepted, submitted, completed, members] = await Promise.all([
+      queryOne(`SELECT COUNT(*) as cnt FROM tasks WHERE group_id = ?`, [gid]),
+      queryOne(`SELECT COUNT(*) as cnt FROM tasks WHERE group_id = ? AND status = 'pending'`, [gid]),
+      queryOne(`SELECT COUNT(*) as cnt FROM tasks WHERE group_id = ? AND status = 'accepted'`, [gid]),
+      queryOne(`SELECT COUNT(*) as cnt FROM tasks WHERE group_id = ? AND status = 'submitted'`, [gid]),
+      queryOne(`SELECT COUNT(*) as cnt FROM tasks WHERE group_id = ? AND status = 'completed'`, [gid]),
+      queryOne(`SELECT COUNT(*) as cnt FROM group_members WHERE group_id = ?`, [gid])
+    ]);
+    res.json({
+      total_tasks: total?.cnt || 0,
+      pending: pending?.cnt || 0,
+      accepted: accepted?.cnt || 0,
+      submitted: submitted?.cnt || 0,
+      completed: completed?.cnt || 0,
+      members: members?.cnt || 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// อันดับ + แต้มสะสม
+app.get('/api/dashboard/leaderboard/:groupId', async (req, res) => {
+  try {
+    const leaders = await TaskDB.getLeaderboard(req.params.groupId);
+    res.json(leaders);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// งานทั้งหมด (พร้อม filter)
+app.get('/api/dashboard/tasks/:groupId', async (req, res) => {
+  try {
+    const gid = req.params.groupId;
+    const status = req.query.status;
+    let sql = `SELECT * FROM tasks WHERE group_id = ?`;
+    let params = [gid];
+    if (status && status !== 'all') {
+      sql += ` AND status = ?`;
+      params.push(status);
+    }
+    sql += ` ORDER BY created_at DESC LIMIT 100`;
+    const tasks = await queryAll(sql, params);
+    res.json(tasks);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// สมาชิกในกลุ่ม
+app.get('/api/dashboard/members/:groupId', async (req, res) => {
+  try {
+    const members = await TaskDB.getGroupMembers(req.params.groupId);
+    res.json(members);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// กิจกรรมล่าสุด (recent activity = tasks + points log)
+app.get('/api/dashboard/activity/:groupId', async (req, res) => {
+  try {
+    const gid = req.params.groupId;
+    const tasks = await queryAll(
+      `SELECT task_id, assigner_name, assignee_name, message, status, created_at, accepted_at, replied_at, updated_at FROM tasks WHERE group_id = ? ORDER BY updated_at DESC LIMIT 20`,
+      [gid]
+    );
+    const pointsLog = await queryAll(
+      `SELECT pl.*, p.display_name FROM points_log pl LEFT JOIN points p ON pl.user_id = p.user_id AND pl.group_id = p.group_id WHERE pl.group_id = ? ORDER BY pl.created_at DESC LIMIT 20`,
+      [gid]
+    );
+    res.json({ tasks, pointsLog });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
