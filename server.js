@@ -2109,10 +2109,6 @@ function buildFlexGroupNotify(taskId, assignerName, assigneeNames, taskMessage, 
     }
   };
 }
-      }
-    }
-  };
-}
 
 // Flex: DM — งานมาแล้ว! (ส่งไป DM ผู้รับงาน)
 function buildFlexDMTaskAssigned(taskId, assignerName, assigneeName, taskMessage) {
