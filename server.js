@@ -2070,18 +2070,18 @@ function buildFlexLeaderboard(leaders) {
 
 // ═══════════════════════════════════════════
 
-// Flex: แจ้งเตือนสั้นๆ ในกลุ่ม (สั่งงานแล้ว)
+// Flex: แจ้งเตือนสั้นๆ ในกลุ่ม (สั่งงานแล้ว) — สไตล์ดำ+เขียว
 function buildFlexGroupNotify(taskId, assignerName, assigneeNames, taskMessage, hasDMFail) {
   const shortMsg = taskMessage.length > 40 ? taskMessage.substring(0, 40) + '…' : taskMessage;
 
   const bodyContents = [
     // เนื้องาน
-    { type: 'text', text: shortMsg, size: 'sm', color: '#333333', weight: 'bold', wrap: true },
-    // ใครสั่ง → ใครรับ (บรรทัดเดียว)
+    { type: 'text', text: shortMsg, size: 'sm', color: '#00FF88', weight: 'bold', wrap: true },
+    // ใครสั่ง → ใครรับ
     {
       type: 'text',
       text: `${assignerName} → ${assigneeNames}`,
-      size: 'xs', color: '#888888', margin: 'sm', wrap: true
+      size: 'xs', color: '#66BB6A', margin: 'sm', wrap: true
     }
   ];
 
@@ -2090,7 +2090,7 @@ function buildFlexGroupNotify(taskId, assignerName, assigneeNames, taskMessage, 
     bodyContents.push({
       type: 'text',
       text: '⚠️ เพิ่มเพื่อนบอทก่อนนะ จะได้รับ DM',
-      size: 'xxs', color: '#E65100', margin: 'md', wrap: true,
+      size: 'xxs', color: '#FFAB40', margin: 'md', wrap: true,
       action: { type: 'uri', uri: 'https://line.me/R/ti/p/@909kiqvu' }
     });
   }
@@ -2103,7 +2103,12 @@ function buildFlexGroupNotify(taskId, assignerName, assigneeNames, taskMessage, 
       size: 'kilo',
       body: {
         type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'none',
+        backgroundColor: '#1A1A1A',
         contents: bodyContents
+      }
+    }
+  };
+}
       }
     }
   };
