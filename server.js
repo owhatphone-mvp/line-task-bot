@@ -1014,54 +1014,18 @@ async function createTask(event, mentionees, assignerName) {
       if (!sent) dmFailedUsers.push(ct);
     }
 
-    // ─── แจ้งเตือนสั้นๆ ในกลุ่ป ───
-    const substitution = {};
-    const mentionParts = [];
-    createdTasks.forEach((task, index) => {
-      const key = `assignee${index}`;
-      substitution[key] = {
-        type: 'mention',
-        mentionee: { type: 'user', userId: task.assigneeId }
-      };
-      mentionParts.push(`{${key}}`);
-    });
+    // ─── แจ้งเตือนสั้นๆ ในกลุ่ม (Flex Message) ───
+    const hasDMFail = dmFailedUsers.length > 0;
+    const groupFlex = buildFlexGroupNotify(taskId, assignerName, assigneeNames, taskMessage, hasDMFail);
 
-    // ถ้ามีคนที่ DM ไม่ได้ → ส่งการ์ดเต็มในกลุ่ป + แนะนำให้ add friend
-    if (dmFailedUsers.length > 0) {
-      const flexMsg = buildFlexTaskCreated(taskId, assignerName, assigneeNames, taskMessage);
-      const addFriendMsg = {
-        type: 'textV2',
-        text: `📌 ${mentionParts.join(' ')} มีงานใหม่รหัส ${taskId}\n\n⚠️ ส่ง DM ไม่ได้ เพิ่มเพื่อนผมก่อนนะครับ จะได้รับ-ส่งงานสะดวก 👇\nhttps://line.me/R/ti/p/@909kiqvu`,
-        substitution: substitution
-      };
-
-      try {
-        await client.replyMessage({
-          replyToken: event.replyToken,
-          messages: [flexMsg, addFriendMsg]
-        });
-      } catch (err) {
-        console.error('Error sending flex:', err);
-        const fallbackText = formatTaskCreatedMessage(createdTasks, assignerName, taskMessage);
-        await replyMessage(event.replyToken, fallbackText);
-      }
-    } else {
-      // ทุกคน DM ได้ → แจ้งสั้นๆ ในกลุ่ป
-      const shortMsg = {
-        type: 'textV2',
-        text: `📌 ${mentionParts.join(' ')} มีงานใหม่รหัส ${taskId} จาก ${assignerName}\n💬 ${taskMessage.substring(0, 60)}${taskMessage.length > 60 ? '...' : ''}\n\n📩 เช็ค DM เพื่อรับงานได้เลย!`,
-        substitution: substitution
-      };
-
-      try {
-        await client.replyMessage({
-          replyToken: event.replyToken,
-          messages: [shortMsg]
-        });
-      } catch (err) {
-        console.error('Error sending notification:', err);
-        await replyMessage(event.replyToken, `📌 งานใหม่ ${taskId}: ${taskMessage}\nมอบให้: ${assigneeNames}`);
-      }
+    try {
+      await client.replyMessage({
+        replyToken: event.replyToken,
+        messages: [groupFlex]
+      });
+    } catch (err) {
+      console.error('Error sending group flex:', err);
+      await replyMessage(event.replyToken, `📌 งานใหม่ ${taskId}: ${taskMessage}\nมอบให้: ${assigneeNames}`);
     }
   }
 }
@@ -2098,6 +2062,78 @@ function buildFlexLeaderboard(leaders) {
 }
 
 // ═══════════════════════════════════════════
+
+// Flex: แจ้งเตือนสั้นๆ ในกลุ่ม (สั่งงานแล้ว)
+function buildFlexGroupNotify(taskId, assignerName, assigneeNames, taskMessage, hasDMFail) {
+  const shortMsg = taskMessage.length > 50 ? taskMessage.substring(0, 50) + '...' : taskMessage;
+  
+  const bodyContents = [
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm',
+      contents: [
+        { type: 'text', text: shortMsg, size: 'sm', color: '#333333', wrap: true, flex: 1, weight: 'bold' }
+      ]
+    },
+    { type: 'separator', margin: 'md' },
+    {
+      type: 'box', layout: 'horizontal', margin: 'md',
+      contents: [
+        { type: 'text', text: 'สั่งโดย', size: 'xs', color: '#AAAAAA', flex: 2 },
+        { type: 'text', text: assignerName, size: 'xs', color: '#666666', flex: 4, align: 'end' }
+      ]
+    },
+    {
+      type: 'box', layout: 'horizontal', margin: 'sm',
+      contents: [
+        { type: 'text', text: 'มอบให้', size: 'xs', color: '#AAAAAA', flex: 2 },
+        { type: 'text', text: assigneeNames, size: 'xs', color: '#FF8C00', flex: 4, align: 'end', weight: 'bold', wrap: true }
+      ]
+    }
+  ];
+
+  // ถ้า DM ไม่ได้ → เพิ่มข้อความแนะนำ add friend
+  if (hasDMFail) {
+    bodyContents.push({ type: 'separator', margin: 'md' });
+    bodyContents.push({
+      type: 'box', layout: 'vertical', margin: 'md', backgroundColor: '#FFF3E0', paddingAll: '8px', cornerRadius: '6px',
+      contents: [
+        { type: 'text', text: '⚠️ เพิ่มเพื่อนผมก่อนนะ จะได้รับงานผ่าน DM', size: 'xxs', color: '#E65100', wrap: true },
+        { type: 'text', text: 'line.me/R/ti/p/@909kiqvu', size: 'xxs', color: '#1E88E5', margin: 'xs', action: { type: 'uri', uri: 'https://line.me/R/ti/p/@909kiqvu' } }
+      ]
+    });
+  } else {
+    bodyContents.push({ type: 'separator', margin: 'md' });
+    bodyContents.push({
+      type: 'text', text: '📩 เช็ค DM เพื่อรับงานได้เลย', size: 'xxs', color: '#888888', margin: 'md', align: 'center'
+    });
+  }
+
+  return {
+    type: 'flex',
+    altText: `📌 งานใหม่ [${taskId}] ${shortMsg}`,
+    contents: {
+      type: 'bubble',
+      size: 'kilo',
+      header: {
+        type: 'box', layout: 'horizontal', alignItems: 'center', backgroundColor: '#FF8C00', paddingAll: '12px',
+        contents: [
+          { type: 'text', text: '📌', size: 'lg', flex: 0 },
+          {
+            type: 'box', layout: 'vertical', flex: 1, margin: 'md',
+            contents: [
+              { type: 'text', text: 'งานใหม่', color: '#FFFFFF', size: 'sm', weight: 'bold' },
+              { type: 'text', text: `รหัส ${taskId}`, color: '#FFFFFF99', size: 'xxs' }
+            ]
+          }
+        ]
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'none',
+        contents: bodyContents
+      }
+    }
+  };
+}
 
 // Flex: DM — งานมาแล้ว! (ส่งไป DM ผู้รับงาน)
 function buildFlexDMTaskAssigned(taskId, assignerName, assigneeName, taskMessage) {
