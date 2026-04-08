@@ -2289,6 +2289,11 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
+// เช็คเวอร์ชันที่ deploy อยู่
+app.get('/api/version', (req, res) => {
+  res.json({ version: 'v3-flex-compact', deployed: new Date().toISOString() });
+});
+
 // ดึงข้อมูลงานทั้งหมดในกลุ่ม (สำหรับ debug)
 app.get('/api/tasks/:groupId', async (req, res) => {
   try {
