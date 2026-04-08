@@ -311,6 +311,11 @@ async function handleEvent(event) {
   if (event.type === 'memberJoined') {
     await handleMemberJoined(event);
   }
+
+  // postback (จากปุ่ม Flex ที่เปิด keyboard) — ไม่ต้อง reply รอ user พิมพ์
+  if (event.type === 'postback') {
+    console.log('Postback received:', event.postback?.data);
+  }
 }
 
 // จัดการข้อความ text
@@ -602,17 +607,17 @@ async function handleAcceptTaskDM(replyToken, userId, displayName, text) {
   }
 
   if (task.assignee_id !== userId) {
-    await replyMessage(replyToken, `คุณไม่ใช่ผู้รับผิดชอบงานรหัส ${task.task_id} ครับ`);
+    await replyMessage(replyToken, `คุณไม่ใช่ผู้รับผิดชอบงานนี้ครับ`);
     return;
   }
 
   if (task.status === 'accepted') {
-    await replyMessage(replyToken, `คุณรับงานรหัส ${task.task_id} ไปแล้วครับ`);
+    await replyMessage(replyToken, `คุณรับงานนี้ไปแล้วครับ`);
     return;
   }
 
   if (task.status === 'completed') {
-    await replyMessage(replyToken, `งานรหัส ${task.task_id} เสร็จสิ้นไปแล้วครับ`);
+    await replyMessage(replyToken, `งานนี้เสร็จสิ้นไปแล้วครับ`);
     return;
   }
 
@@ -659,7 +664,7 @@ async function handleAcceptTaskDM(replyToken, userId, displayName, text) {
   try {
     await client.replyMessage({ replyToken, messages: [flexMsg] });
   } catch (err) {
-    await replyMessage(replyToken, `👍 รับงานแล้ว!\nรหัส: ${task.task_id}\nกำหนดส่ง: ${formatDeadline(deadline)}`);
+    await replyMessage(replyToken, `👍 รับงานแล้ว!\n📝 ${task.message}\n⏰ กำหนดส่ง: ${formatDeadline(deadline)}`);
   }
 
   // แจ้งเตือนสั้นๆ ในกลุ่ม
@@ -668,7 +673,7 @@ async function handleAcceptTaskDM(replyToken, userId, displayName, text) {
       to: task.group_id,
       messages: [{
         type: 'textV2',
-        text: `👍 {assignee} รับงานรหัส ${task.task_id} แล้ว!\n⏰ กำหนดส่ง: ${formatDeadline(deadline)} {assigner}`,
+        text: `👍 {assignee} รับงานแล้ว!\n⏰ กำหนดส่ง: ${formatDeadline(deadline)} {assigner}`,
         substitution: {
           assignee: { type: 'mention', mentionee: { type: 'user', userId: userId } },
           assigner: { type: 'mention', mentionee: { type: 'user', userId: task.assigner_id } }
@@ -693,22 +698,22 @@ async function handleTaskReplyDM(replyToken, userId, displayName, text) {
   const task = await TaskDB.getTaskById(taskId);
 
   if (!task) {
-    await replyMessage(replyToken, `ไม่พบงานรหัส ${taskId} ครับ`);
+    await replyMessage(replyToken, `ไม่พบงานนี้ครับ`);
     return;
   }
 
   if (task.assignee_id !== userId) {
-    await replyMessage(replyToken, `คุณไม่ใช่ผู้รับผิดชอบงานรหัส ${taskId} ครับ`);
+    await replyMessage(replyToken, `คุณไม่ใช่ผู้รับผิดชอบงานนี้ครับ`);
     return;
   }
 
   if (task.status === 'completed') {
-    await replyMessage(replyToken, `งานรหัส ${taskId} เสร็จสิ้นไปแล้วครับ`);
+    await replyMessage(replyToken, `งานนี้เสร็จสิ้นไปแล้วครับ`);
     return;
   }
 
   if (task.status === 'submitted') {
-    await replyMessage(replyToken, `งานรหัส ${taskId} ส่งไปรอตรวจแล้วครับ`);
+    await replyMessage(replyToken, `งานนี้ส่งไปรอตรวจแล้วครับ`);
     return;
   }
 
@@ -725,7 +730,7 @@ async function handleTaskReplyDM(replyToken, userId, displayName, text) {
   try {
     await client.replyMessage({ replyToken, messages: [flexMsg] });
   } catch (err) {
-    await replyMessage(replyToken, `📨 ส่งงานรหัส ${taskId} ไปรอตรวจแล้วครับ!`);
+    await replyMessage(replyToken, `📨 ส่งงานไปรอตรวจแล้วครับ!`);
   }
 
   // ส่ง DM ไปหาผู้สั่งงาน เพื่อตรวจ
@@ -739,7 +744,7 @@ async function handleTaskReplyDM(replyToken, userId, displayName, text) {
         to: task.group_id,
         messages: [{
           type: 'textV2',
-          text: `📨 {assignee} ส่งงานรหัส ${taskId} แล้ว!\n{assigner} กรุณาตรวจงานด้วยครับ\n\n💬 "${replyText.substring(0, 100)}"`,
+          text: `📨 {assignee} ส่งงานแล้ว!\n{assigner} กรุณาตรวจงานด้วยครับ\n\n💬 "${replyText.substring(0, 100)}"`,
           substitution: {
             assignee: { type: 'mention', mentionee: { type: 'user', userId: userId } },
             assigner: { type: 'mention', mentionee: { type: 'user', userId: task.assigner_id } }
@@ -762,17 +767,17 @@ async function handleApproveTask(replyToken, userId, displayName, text) {
 
   const task = await TaskDB.getTaskById(taskId);
   if (!task) {
-    await replyMessage(replyToken, `ไม่พบงานรหัส ${taskId} ครับ`);
+    await replyMessage(replyToken, `ไม่พบงานนี้ครับ`);
     return;
   }
 
   if (task.assigner_id !== userId) {
-    await replyMessage(replyToken, `คุณไม่ใช่ผู้สั่งงานรหัส ${taskId} ครับ ไม่สามารถอนุมัติได้`);
+    await replyMessage(replyToken, `คุณไม่ใช่ผู้สั่งงานนี้ครับ ไม่สามารถอนุมัติได้`);
     return;
   }
 
   if (task.status !== 'submitted') {
-    await replyMessage(replyToken, `งานรหัส ${taskId} ไม่ได้อยู่ในสถานะรอตรวจครับ (สถานะ: ${task.status})`);
+    await replyMessage(replyToken, `งานนี้ไม่ได้อยู่ในสถานะรอตรวจครับ (สถานะ: ${task.status})`);
     return;
   }
 
@@ -815,7 +820,7 @@ async function handleApproveTask(replyToken, userId, displayName, text) {
   };
 
   // ตอบกลับผู้อนุมัติ
-  await replyMessage(replyToken, `✅ อนุมัติงานรหัส ${taskId} แล้วครับ!\n\n📝 ${task.message}\n👤 ทำโดย: ${task.assignee_name}\n💎 +${earnedPoints} แต้ม (${pointReason})`);
+  await replyMessage(replyToken, `✅ อนุมัติงานแล้วครับ!\n\n📝 ${task.message}\n👤 ทำโดย: ${task.assignee_name}\n💎 +${earnedPoints} แต้ม (${pointReason})`);
 
   // แจ้ง DM ผู้ทำงาน
   const completedFlex = buildFlexTaskCompleted(taskId, task.assigner_name, task.assignee_name, task.message, task.reply_message || '', pointsInfo);
@@ -827,7 +832,7 @@ async function handleApproveTask(replyToken, userId, displayName, text) {
       to: task.group_id,
       messages: [{
         type: 'textV2',
-        text: `🎉 งานรหัส ${taskId} สำเร็จ!\n{assignee} ได้ +${earnedPoints} แต้ม (${pointReason})`,
+        text: `🎉 งานสำเร็จ!\n{assignee} ได้ +${earnedPoints} แต้ม (${pointReason})`,
         substitution: {
           assignee: { type: 'mention', mentionee: { type: 'user', userId: task.assignee_id } }
         }
@@ -857,24 +862,24 @@ async function handleRejectTask(replyToken, userId, displayName, text) {
 
   const task = await TaskDB.getTaskById(taskId);
   if (!task) {
-    await replyMessage(replyToken, `ไม่พบงานรหัส ${taskId} ครับ`);
+    await replyMessage(replyToken, `ไม่พบงานนี้ครับ`);
     return;
   }
 
   if (task.assigner_id !== userId) {
-    await replyMessage(replyToken, `คุณไม่ใช่ผู้สั่งงานรหัส ${taskId} ครับ`);
+    await replyMessage(replyToken, `คุณไม่ใช่ผู้สั่งงานนี้ครับ`);
     return;
   }
 
   if (task.status !== 'submitted') {
-    await replyMessage(replyToken, `งานรหัส ${taskId} ไม่ได้อยู่ในสถานะรอตรวจครับ`);
+    await replyMessage(replyToken, `งานนี้ไม่ได้อยู่ในสถานะรอตรวจครับ`);
     return;
   }
 
   // ส่งกลับแก้ไข (กลับเป็น accepted)
   await TaskDB.rejectTask(taskId, reason);
 
-  await replyMessage(replyToken, `🔄 ส่งงานรหัส ${taskId} กลับไปแก้ไขแล้วครับ\n📝 เหตุผล: ${reason}`);
+  await replyMessage(replyToken, `🔄 ส่งงานกลับไปแก้ไขแล้วครับ\n📝 เหตุผล: ${reason}`);
 
   // แจ้ง DM ผู้ทำงาน
   const rejectFlex = buildFlexTaskRejected(taskId, task.assigner_name, task.assignee_name, task.message, reason);
@@ -886,7 +891,7 @@ async function handleRejectTask(replyToken, userId, displayName, text) {
         to: task.group_id,
         messages: [{
           type: 'textV2',
-          text: `🔄 {assigner} ส่งงานรหัส ${taskId} กลับมาแก้ไข\n{assignee} กรุณาแก้ไขและส่งใหม่ครับ\n\n📝 เหตุผล: ${reason}`,
+          text: `🔄 {assigner} ส่งงานกลับมาแก้ไข\n{assignee} กรุณาแก้ไขและส่งใหม่ครับ\n\n📝 เหตุผล: ${reason}`,
           substitution: {
             assignee: { type: 'mention', mentionee: { type: 'user', userId: task.assignee_id } },
             assigner: { type: 'mention', mentionee: { type: 'user', userId: task.assigner_id } }
@@ -1123,17 +1128,17 @@ async function handleAcceptTask(replyToken, groupId, userId, displayName, text) 
   }
 
   if (task.assignee_id !== userId) {
-    await replyMessage(replyToken, `คุณไม่ใช่ผู้รับผิดชอบงานรหัส ${task.task_id} ครับ`);
+    await replyMessage(replyToken, `คุณไม่ใช่ผู้รับผิดชอบงานนี้ครับ`);
     return;
   }
 
   if (task.status === 'accepted') {
-    await replyMessage(replyToken, `คุณรับงานรหัส ${task.task_id} ไปแล้วครับ`);
+    await replyMessage(replyToken, `คุณรับงานนี้ไปแล้วครับ`);
     return;
   }
 
   if (task.status === 'completed') {
-    await replyMessage(replyToken, `งานรหัส ${task.task_id} เสร็จสิ้นไปแล้วครับ`);
+    await replyMessage(replyToken, `งานนี้เสร็จสิ้นไปแล้วครับ`);
     return;
   }
 
@@ -1190,7 +1195,7 @@ async function handleAcceptTask(replyToken, groupId, userId, displayName, text) 
 
   const mentionMsg = {
     type: 'textV2',
-    text: `👍 ${displayName} รับงานรหัส ${task.task_id} แล้ว! {assigner}`,
+    text: `👍 ${displayName} รับงานแล้ว! {assigner}`,
     substitution: {
       assigner: {
         type: 'mention',
@@ -1206,7 +1211,7 @@ async function handleAcceptTask(replyToken, groupId, userId, displayName, text) 
     });
   } catch (err) {
     console.error('Error sending flex:', err);
-    const fallback = `👍 รับงานแล้ว!\nรหัส: ${task.task_id}\nรายละเอียด: ${task.message}\nกำหนดส่ง: ${formatDeadline(deadline)}`;
+    const fallback = `👍 รับงานแล้ว!\n📝 ${task.message}\n⏰ กำหนดส่ง: ${formatDeadline(deadline)}`;
     await replyMessage(replyToken, fallback);
   }
 }
@@ -1224,22 +1229,22 @@ async function handleTaskReply(replyToken, groupId, userId, displayName, text) {
   const task = await TaskDB.getTaskById(taskId);
 
   if (!task) {
-    await replyMessage(replyToken, `ไม่พบงานรหัส ${taskId} ครับ`);
+    await replyMessage(replyToken, `ไม่พบงานนี้ครับ`);
     return;
   }
 
   if (task.assignee_id !== userId) {
-    await replyMessage(replyToken, `คุณไม่ใช่ผู้รับผิดชอบงานรหัส ${taskId} ครับ`);
+    await replyMessage(replyToken, `คุณไม่ใช่ผู้รับผิดชอบงานนี้ครับ`);
     return;
   }
 
   if (task.status === 'completed') {
-    await replyMessage(replyToken, `งานรหัส ${taskId} เสร็จสิ้นไปแล้วครับ`);
+    await replyMessage(replyToken, `งานนี้เสร็จสิ้นไปแล้วครับ`);
     return;
   }
 
   if (task.status === 'submitted') {
-    await replyMessage(replyToken, `งานรหัส ${taskId} ส่งไปรอตรวจแล้วครับ`);
+    await replyMessage(replyToken, `งานนี้ส่งไปรอตรวจแล้วครับ`);
     return;
   }
 
@@ -1252,7 +1257,7 @@ async function handleTaskReply(replyToken, groupId, userId, displayName, text) {
   await TaskDB.replyToTask(taskId, replyText);
 
   // แจ้งในกลุ่ปสั้นๆ
-  await replyMessage(replyToken, `📨 ${displayName} ส่งงานรหัส ${taskId} ไปรอตรวจแล้วครับ!`);
+  await replyMessage(replyToken, `📨 ${displayName} ส่งงานไปรอตรวจแล้วครับ!`);
 
   // ส่ง DM ไปหาผู้สั่งงาน เพื่อตรวจ
   const reviewFlex = buildFlexReviewRequest(taskId, task.assigner_name, displayName, task.message, replyText);
@@ -1265,7 +1270,7 @@ async function handleTaskReply(replyToken, groupId, userId, displayName, text) {
         to: groupId,
         messages: [{
           type: 'textV2',
-          text: `{assigner} มีงานรหัส ${taskId} รอตรวจครับ\nพิมพ์ #อนุมัติ ${taskId} หรือ #แก้ไข ${taskId} <เหตุผล>`,
+          text: `{assigner} มีงานรอตรวจครับ\nเช็คใน DM ได้เลย`,
           substitution: {
             assigner: { type: 'mention', mentionee: { type: 'user', userId: task.assigner_id } }
           }
@@ -1695,7 +1700,7 @@ function buildFlexTaskCreated(taskId, assignerName, assigneeNames, taskMessage) 
             layout: 'vertical',
             contents: [
               { type: 'text', text: 'ภารกิจใหม่มาแล้ว!', color: '#FFFFFF', size: 'lg', weight: 'bold' },
-              { type: 'text', text: `รหัส ${taskId} | 💎 รับ +5 ทำเสร็จ +10~15`, color: '#FFFFFF99', size: 'xs' }
+              { type: 'text', text: `💎 รับ +5 ทำเสร็จ +10~15`, color: '#FFFFFF99', size: 'xs' }
             ],
             flex: 1,
             margin: 'lg'
@@ -1928,7 +1933,7 @@ function buildFlexOverdueReminder(taskId, assigneeName, taskMessage, deadlineTex
             layout: 'vertical',
             contents: [
               { type: 'text', text: 'เฮ้! อย่าลืมงานนี้นะ', color: '#FFFFFF', size: 'lg', weight: 'bold' },
-              { type: 'text', text: `รหัส ${taskId} | ส่งตอนนี้ยังได้แต้ม!`, color: '#FFFFFF99', size: 'xs' }
+              { type: 'text', text: `ส่งตอนนี้ยังได้แต้ม!`, color: '#FFFFFF99', size: 'xs' }
             ],
             flex: 1,
             margin: 'lg'
@@ -2167,7 +2172,7 @@ function buildFlexTaskSubmitted(taskId, assignerName, submitterName, taskMessage
           { type: 'text', text: '📨', size: 'xxl', flex: 0 },
           { type: 'box', layout: 'vertical', flex: 1, margin: 'lg', contents: [
             { type: 'text', text: 'ส่งงานแล้ว! รอตรวจ', color: '#FFFFFF', size: 'lg', weight: 'bold' },
-            { type: 'text', text: `รหัส ${taskId} | ส่งไปยัง ${assignerName}`, color: '#FFFFFF99', size: 'xs' }
+            { type: 'text', text: `ส่งไปยัง ${assignerName}`, color: '#FFFFFF99', size: 'xs' }
           ]}
         ]
       },
@@ -2189,47 +2194,42 @@ function buildFlexTaskSubmitted(taskId, assignerName, submitterName, taskMessage
   };
 }
 
-// Flex: ขอตรวจงาน (สีม่วง) — ส่ง DM ไปหาผู้สั่งงาน
+// Flex: ขอตรวจงาน — ส่ง DM ไปหาผู้สั่งงาน (ปุ่มอนุมัติ + ปุ่มส่งกลับเปิด keyboard)
 function buildFlexReviewRequest(taskId, assignerName, submitterName, taskMessage, replyText) {
   return {
     type: 'flex',
-    altText: `🔍 ${submitterName} ส่งงาน [${taskId}] มาให้ตรวจ`,
+    altText: `🔍 ${submitterName} ส่งงานมาให้ตรวจ`,
     contents: {
       type: 'bubble',
       size: 'mega',
-      header: {
-        type: 'box', layout: 'horizontal', alignItems: 'center', backgroundColor: '#7C4DFF', paddingAll: '20px',
-        contents: [
-          { type: 'text', text: '🔍', size: 'xxl', flex: 0 },
-          { type: 'box', layout: 'vertical', flex: 1, margin: 'lg', contents: [
-            { type: 'text', text: 'มีงานส่งมาให้ตรวจ!', color: '#FFFFFF', size: 'lg', weight: 'bold' },
-            { type: 'text', text: `รหัส ${taskId} | จาก ${submitterName}`, color: '#FFFFFF99', size: 'xs' }
-          ]}
-        ]
-      },
       body: {
-        type: 'box', layout: 'vertical', paddingAll: '20px',
+        type: 'box', layout: 'vertical', paddingAll: '20px', backgroundColor: '#1A1A1A',
         contents: [
-          { type: 'text', text: taskMessage, size: 'md', color: '#333333', wrap: true, weight: 'bold' },
-          { type: 'separator', margin: 'lg' },
-          { type: 'box', layout: 'vertical', margin: 'lg', spacing: 'md', contents: [
-            createFlexRow('ส่งโดย', submitterName, '#7C4DFF'),
-            createFlexRow('สถานะ', '📨 รอตรวจ', '#F9A825')
+          { type: 'text', text: taskMessage, size: 'md', color: '#00FF88', wrap: true, weight: 'bold' },
+          { type: 'separator', margin: 'lg', color: '#333333' },
+          { type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm', contents: [
+            { type: 'box', layout: 'horizontal', contents: [
+              { type: 'text', text: 'ส่งโดย', size: 'sm', color: '#66BB6A', flex: 3 },
+              { type: 'text', text: submitterName, size: 'sm', color: '#00FF88', flex: 5, align: 'end', weight: 'bold' }
+            ]},
+            { type: 'box', layout: 'horizontal', contents: [
+              { type: 'text', text: 'สถานะ', size: 'sm', color: '#66BB6A', flex: 3 },
+              { type: 'text', text: '📨 รอตรวจ', size: 'sm', color: '#FFAB40', flex: 5, align: 'end', weight: 'bold' }
+            ]}
           ]},
-          { type: 'text', text: '💬 คำตอบ', size: 'xs', color: '#AAAAAA', margin: 'lg' },
-          { type: 'box', layout: 'vertical', backgroundColor: '#F5F5F5', paddingAll: '12px', cornerRadius: '8px', margin: 'sm', contents: [
-            { type: 'text', text: replyText, size: 'sm', color: '#555555', wrap: true }
+          { type: 'text', text: '💬 คำตอบที่ส่งมา', size: 'xs', color: '#66BB6A', margin: 'lg' },
+          { type: 'box', layout: 'vertical', backgroundColor: '#2A2A2A', paddingAll: '12px', cornerRadius: '8px', margin: 'sm', contents: [
+            { type: 'text', text: replyText, size: 'sm', color: '#CCCCCC', wrap: true }
           ]}
         ]
       },
       footer: {
-        type: 'box', layout: 'vertical', paddingAll: '15px', spacing: 'md',
+        type: 'box', layout: 'vertical', paddingAll: '15px', spacing: 'md', backgroundColor: '#1A1A1A',
         contents: [
-          { type: 'button', action: { type: 'message', label: '✅ อนุมัติ', text: `#อนุมัติ ${taskId}` }, style: 'primary', color: '#43A047', height: 'sm' },
-          { type: 'text', text: `ส่งกลับแก้ไข → พิมพ์:\n#แก้ไข ${taskId} <สิ่งที่ต้องแก้>`, size: 'xxs', color: '#999999', margin: 'md', wrap: true, align: 'center' }
+          { type: 'button', action: { type: 'message', label: '✅ อนุมัติ', text: `#อนุมัติ ${taskId}` }, style: 'primary', color: '#00C853', height: 'sm' },
+          { type: 'button', action: { type: 'postback', label: '🔄 ส่งกลับแก้ไข', data: `action=reject&taskId=${taskId}`, inputOption: 'openKeyboard', fillInText: `#แก้ไข ${taskId} ` }, style: 'primary', color: '#E53935', height: 'sm' }
         ]
-      },
-      styles: { footer: { separator: true } }
+      }
     }
   };
 }
@@ -2248,7 +2248,7 @@ function buildFlexTaskRejected(taskId, assignerName, assigneeName, taskMessage, 
           { type: 'text', text: '🔄', size: 'xxl', flex: 0 },
           { type: 'box', layout: 'vertical', flex: 1, margin: 'lg', contents: [
             { type: 'text', text: 'งานต้องแก้ไข!', color: '#FFFFFF', size: 'lg', weight: 'bold' },
-            { type: 'text', text: `รหัส ${taskId} | จาก ${assignerName}`, color: '#FFFFFF99', size: 'xs' }
+            { type: 'text', text: `จาก ${assignerName}`, color: '#FFFFFF99', size: 'xs' }
           ]}
         ]
       },
@@ -2291,7 +2291,7 @@ app.get('/', (req, res) => {
 
 // เช็คเวอร์ชันที่ deploy อยู่
 app.get('/api/version', (req, res) => {
-  res.json({ version: 'v3-flex-compact', deployed: new Date().toISOString() });
+  res.json({ version: 'v4-no-taskid', deployed: new Date().toISOString() });
 });
 
 // ดึงข้อมูลงานทั้งหมดในกลุ่ม (สำหรับ debug)
