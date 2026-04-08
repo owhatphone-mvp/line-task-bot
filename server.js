@@ -2065,68 +2065,35 @@ function buildFlexLeaderboard(leaders) {
 
 // Flex: แจ้งเตือนสั้นๆ ในกลุ่ม (สั่งงานแล้ว)
 function buildFlexGroupNotify(taskId, assignerName, assigneeNames, taskMessage, hasDMFail) {
-  const shortMsg = taskMessage.length > 50 ? taskMessage.substring(0, 50) + '...' : taskMessage;
-  
+  const shortMsg = taskMessage.length > 40 ? taskMessage.substring(0, 40) + '…' : taskMessage;
+
   const bodyContents = [
+    // เนื้องาน
+    { type: 'text', text: shortMsg, size: 'sm', color: '#333333', weight: 'bold', wrap: true },
+    // ใครสั่ง → ใครรับ (บรรทัดเดียว)
     {
-      type: 'box', layout: 'horizontal', spacing: 'sm',
-      contents: [
-        { type: 'text', text: shortMsg, size: 'sm', color: '#333333', wrap: true, flex: 1, weight: 'bold' }
-      ]
-    },
-    { type: 'separator', margin: 'md' },
-    {
-      type: 'box', layout: 'horizontal', margin: 'md',
-      contents: [
-        { type: 'text', text: 'สั่งโดย', size: 'xs', color: '#AAAAAA', flex: 2 },
-        { type: 'text', text: assignerName, size: 'xs', color: '#666666', flex: 4, align: 'end' }
-      ]
-    },
-    {
-      type: 'box', layout: 'horizontal', margin: 'sm',
-      contents: [
-        { type: 'text', text: 'มอบให้', size: 'xs', color: '#AAAAAA', flex: 2 },
-        { type: 'text', text: assigneeNames, size: 'xs', color: '#FF8C00', flex: 4, align: 'end', weight: 'bold', wrap: true }
-      ]
+      type: 'text',
+      text: `${assignerName} → ${assigneeNames}`,
+      size: 'xs', color: '#888888', margin: 'sm', wrap: true
     }
   ];
 
-  // ถ้า DM ไม่ได้ → เพิ่มข้อความแนะนำ add friend
+  // ถ้า DM ไม่ได้ → แนะนำ add friend สั้นๆ
   if (hasDMFail) {
-    bodyContents.push({ type: 'separator', margin: 'md' });
     bodyContents.push({
-      type: 'box', layout: 'vertical', margin: 'md', backgroundColor: '#FFF3E0', paddingAll: '8px', cornerRadius: '6px',
-      contents: [
-        { type: 'text', text: '⚠️ เพิ่มเพื่อนผมก่อนนะ จะได้รับงานผ่าน DM', size: 'xxs', color: '#E65100', wrap: true },
-        { type: 'text', text: 'line.me/R/ti/p/@909kiqvu', size: 'xxs', color: '#1E88E5', margin: 'xs', action: { type: 'uri', uri: 'https://line.me/R/ti/p/@909kiqvu' } }
-      ]
-    });
-  } else {
-    bodyContents.push({ type: 'separator', margin: 'md' });
-    bodyContents.push({
-      type: 'text', text: '📩 เช็ค DM เพื่อรับงานได้เลย', size: 'xxs', color: '#888888', margin: 'md', align: 'center'
+      type: 'text',
+      text: '⚠️ เพิ่มเพื่อนบอทก่อนนะ จะได้รับ DM',
+      size: 'xxs', color: '#E65100', margin: 'md', wrap: true,
+      action: { type: 'uri', uri: 'https://line.me/R/ti/p/@909kiqvu' }
     });
   }
 
   return {
     type: 'flex',
-    altText: `📌 งานใหม่ [${taskId}] ${shortMsg}`,
+    altText: `📌 ${assignerName} → ${assigneeNames}: ${shortMsg}`,
     contents: {
       type: 'bubble',
       size: 'kilo',
-      header: {
-        type: 'box', layout: 'horizontal', alignItems: 'center', backgroundColor: '#FF8C00', paddingAll: '12px',
-        contents: [
-          { type: 'text', text: '📌', size: 'lg', flex: 0 },
-          {
-            type: 'box', layout: 'vertical', flex: 1, margin: 'md',
-            contents: [
-              { type: 'text', text: 'งานใหม่', color: '#FFFFFF', size: 'sm', weight: 'bold' },
-              { type: 'text', text: `รหัส ${taskId}`, color: '#FFFFFF99', size: 'xxs' }
-            ]
-          }
-        ]
-      },
       body: {
         type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'none',
         contents: bodyContents
