@@ -2299,13 +2299,14 @@ app.use('/api/dashboard', (req, res, next) => {
   next();
 });
 
-// ดึงรายชื่อกลุ่มทั้งหมด
+// ดึงรายชื่อกลุ่มทั้งหมด (จากทั้ง group_members และ tasks)
 app.get('/api/dashboard/groups', async (req, res) => {
   try {
     const groups = await queryAll(
-      `SELECT DISTINCT group_id FROM group_members`
+      `SELECT DISTINCT group_id FROM tasks
+       UNION
+       SELECT DISTINCT group_id FROM group_members`
     );
-    // ดึงชื่อกลุ่มจากข้อมูลงาน
     const result = [];
     for (const g of groups) {
       const memberCount = await queryOne(
