@@ -1031,7 +1031,7 @@ async function createTask(event, mentionees, assignerName) {
       const flexMsg = buildFlexTaskCreated(taskId, assignerName, assigneeNames, taskMessage);
       const addFriendMsg = {
         type: 'textV2',
-        text: `📌 ${mentionParts.join(' ')} มีงานใหม่รหัส ${taskId}\n\n⚠️ เพิ่มเพื่อน @อู่อันโหว เพื่อรับ-ส่งงานผ่าน DM สะดวกกว่า!\n👉 https://line.me/R/ti/p/@909kiqvu`,
+        text: `📌 ${mentionParts.join(' ')} มีงานใหม่รหัส ${taskId}\n\n⚠️ ส่ง DM ไม่ได้ เพิ่มเพื่อนผมก่อนนะครับ จะได้รับ-ส่งงานสะดวก 👇\nhttps://line.me/R/ti/p/@909kiqvu`,
         substitution: substitution
       };
 
